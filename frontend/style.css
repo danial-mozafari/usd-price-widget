@@ -1,0 +1,312 @@
+:root {
+  --bg-1: #0f0c29;
+  --bg-2: #302b63;
+  --bg-3: #24243e;
+  --glass-bg: rgba(255, 255, 255, 0.08);
+  --glass-border: rgba(255, 255, 255, 0.18);
+  --text-main: #f1f5f9;
+  --text-dim: #a3adc2;
+  --accent-up: #34d399;
+  --accent-down: #f87171;
+  --accent: #818cf8;
+  --shadow: 0 8px 32px rgba(0, 0, 0, 0.37);
+}
+
+[data-theme="light"] {
+  --bg-1: #e0e7ff;
+  --bg-2: #f0f4ff;
+  --bg-3: #dbe4ff;
+  --glass-bg: rgba(255, 255, 255, 0.55);
+  --glass-border: rgba(255, 255, 255, 0.7);
+  --text-main: #1e1b4b;
+  --text-dim: #5b6178;
+  --accent-up: #059669;
+  --accent-down: #dc2626;
+  --accent: #4f46e5;
+  --shadow: 0 8px 32px rgba(80, 80, 140, 0.15);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  font-family: "Segoe UI", Tahoma, Vazirmatn, sans-serif;
+  color: var(--text-main);
+  background: radial-gradient(circle at 20% 20%, var(--bg-2), var(--bg-1) 60%),
+              radial-gradient(circle at 80% 80%, var(--bg-3), transparent 60%);
+  background-color: var(--bg-1);
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  transition: background 0.4s ease, color 0.4s ease;
+}
+
+.app {
+  width: 100%;
+  max-width: 380px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* ---------- شیشه‌ای پایه ---------- */
+.glass {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: 22px;
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  box-shadow: var(--shadow);
+}
+
+/* ---------- هدر ---------- */
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 4px 0;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text-dim);
+}
+
+.live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent-up);
+  box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.6);
+  animation: pulse 1.8s infinite;
+}
+
+@keyframes pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.55); }
+  70%  { box-shadow: 0 0 0 8px rgba(52, 211, 153, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0); }
+}
+
+.theme-toggle {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: 999px;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 16px;
+  color: var(--text-main);
+}
+
+/* ---------- کارت اصلی قیمت ---------- */
+.price-card {
+  padding: 28px 24px;
+  text-align: center;
+}
+
+.price-label {
+  font-size: 13px;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+}
+
+.price {
+  font-size: clamp(34px, 12vw, 46px);
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  direction: ltr;
+  transition: transform 0.25s ease, color 0.3s ease;
+  display: inline-block;
+}
+
+.price.bump { transform: scale(1.06); }
+.price.up { color: var(--accent-up); }
+.price.down { color: var(--accent-down); }
+
+.price-unit {
+  font-size: 15px;
+  color: var(--text-dim);
+  margin-right: 6px;
+}
+
+.change-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 10px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  direction: ltr;
+}
+
+.change-badge.up { background: rgba(52, 211, 153, 0.15); color: var(--accent-up); }
+.change-badge.down { background: rgba(248, 113, 113, 0.15); color: var(--accent-down); }
+.change-badge.flat { background: rgba(160, 160, 160, 0.15); color: var(--text-dim); }
+
+.updated-at {
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+/* ---------- نمودار ---------- */
+.chart-card {
+  padding: 16px 18px;
+}
+
+.section-title {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+canvas#priceChart {
+  width: 100% !important;
+  height: 110px !important;
+}
+
+/* ---------- امروز/دیروز ---------- */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  padding: 16px 18px;
+}
+
+.stat-box {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--glass-border);
+  border-radius: 14px;
+  padding: 10px 12px;
+  text-align: center;
+}
+
+.stat-box .label {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-bottom: 4px;
+}
+
+.stat-box .value {
+  font-size: 16px;
+  font-weight: 700;
+  direction: ltr;
+}
+
+/* ---------- هشدارها ---------- */
+.alerts-card {
+  padding: 16px 18px;
+}
+
+.alert-form {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.alert-form select,
+.alert-form input {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid var(--glass-border);
+  border-radius: 10px;
+  color: var(--text-main);
+  padding: 8px 10px;
+  font-size: 13px;
+  outline: none;
+}
+
+.alert-form select { flex: 0 0 auto; }
+.alert-form input { flex: 1; min-width: 0; direction: ltr; }
+
+.alert-form button {
+  background: var(--accent);
+  border: none;
+  border-radius: 10px;
+  color: white;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.alert-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.alert-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(129, 140, 248, 0.15);
+  color: var(--accent);
+  border-radius: 999px;
+  padding: 5px 6px 5px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  direction: ltr;
+}
+
+.alert-chip button {
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px 4px;
+}
+
+.alert-empty {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.footer-note {
+  text-align: center;
+  font-size: 10px;
+  color: var(--text-dim);
+  opacity: 0.7;
+  margin-top: 2px;
+}
+
+/* ---------- Toast هشدار (جایگزین Notification برای iOS و هر مرورگری) ---------- */
+.toast {
+  position: fixed;
+  top: -120px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 999;
+  background: linear-gradient(135deg, #818cf8, #6366f1);
+  color: white;
+  padding: 16px 22px;
+  border-radius: 16px;
+  font-size: 15px;
+  font-weight: 700;
+  box-shadow: 0 10px 40px rgba(99, 102, 241, 0.5);
+  max-width: 90vw;
+  text-align: center;
+  transition: top 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.toast.show {
+  top: 20px;
+}

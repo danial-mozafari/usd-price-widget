@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>قیمت دلار | لحظه‌ای</title>
+
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="theme-color" content="#0f0c29" />
+  <link rel="apple-touch-icon" href="/icon-192.png" />
+
+  <link rel="stylesheet" href="/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <div class="app">
+
+    <div class="topbar">
+      <div class="brand">
+        <span class="live-dot"></span>
+        <span>لحظه‌ای</span>
+      </div>
+      <button id="themeToggle" class="theme-toggle" title="تغییر پوسته">🌙</button>
+    </div>
+
+    <div class="glass price-card">
+      <div class="price-label">قیمت دلار آمریکا</div>
+      <div>
+        <span id="price" class="price">--</span>
+        <span class="price-unit">تومان</span>
+      </div>
+      <div id="changeBadge" class="change-badge flat">
+        <span id="changeValue">--%</span>
+      </div>
+      <div id="updated" class="updated-at">در حال اتصال...</div>
+    </div>
+
+    <div class="glass chart-card">
+      <div class="section-title">روند اخیر</div>
+      <canvas id="priceChart"></canvas>
+    </div>
+
+    <div class="glass stats-grid">
+      <div class="stat-box">
+        <div class="label">باز شدن امروز</div>
+        <div id="statOpen" class="value">--</div>
+      </div>
+
+      <div class="stat-box">
+        <div class="label">بسته‌شدن دیروز</div>
+        <div id="statYesterday" class="value">--</div>
+      </div>
+
+      <div class="stat-box">
+        <div class="label">بیشترین امروز</div>
+        <div id="statHigh" class="value">--</div>
+      </div>
+
+      <div class="stat-box">
+        <div class="label">کمترین امروز</div>
+        <div id="statLow" class="value">--</div>
+      </div>
+    </div>
+
+    <div class="glass alerts-card">
+      <div class="section-title">هشدار قیمت 🔔</div>
+
+      <div class="alert-form">
+        <select id="alertDirection">
+          <option value="gte">رسید به یا بالاتر از</option>
+          <option value="lte">رسید به یا پایین‌تر از</option>
+        </select>
+
+        <input
+          id="alertValue"
+          type="number"
+          placeholder="مثلاً 70000"
+        />
+
+        <button id="alertAdd">افزودن</button>
+      </div>
+
+      <div id="alertList" class="alert-list">
+        <span class="alert-empty">هنوز هشداری تنظیم نکردی</span>
+      </div>
+    </div>
+
+    <div class="footer-note">
+      داده‌ی شبیه‌سازی‌شده / واقعی بسته به تنظیمات سرور
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script>
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/service-worker.js");
+    }
+  </script>
+
+  <script src="/main.js"></script>
+</body>
+</html>

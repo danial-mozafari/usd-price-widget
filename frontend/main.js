@@ -1,9 +1,10 @@
+```javascript
 // ---------------------------------------------------------------------------
 // تنظیمات
 // ---------------------------------------------------------------------------
 
 // آدرس بک‌اند روی Render
-const API_BASE = "https://usd-price-widget.onrender.com";
+const API_BASE = "https://usd-price-widget-eu.onrender.com";
 
 const numberFmt = new Intl.NumberFormat("en-US");
 const timeFmt = new Intl.DateTimeFormat("en-GB", {
@@ -365,7 +366,6 @@ async function setupPushAndSync(alerts) {
   }
 }
 
-// اگر از قبل هشدار داشتیم
 if (loadAlerts().length > 0) {
   setupPushAndSync(loadAlerts());
 }
@@ -476,3 +476,4 @@ async function fetchPrice() {
 fetchPrice();
 
 setInterval(fetchPrice, 3000);
+```

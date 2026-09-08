@@ -21,6 +21,7 @@ try:
 except Exception:
     TEHRAN_TZ = timezone.utc
 
+
 app = Flask(__name__)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -64,9 +65,6 @@ state = {
 
 price_history = deque(maxlen=HISTORY_MAXLEN)
 
-# ---------------------------------------------------------------------------
-# Daily data
-# ---------------------------------------------------------------------------
 
 def load_daily_data():
     if os.path.exists(DAILY_FILE):
@@ -96,25 +94,28 @@ def save_daily_data(data):
 
 daily = load_daily_data()
 
-# ---------------------------------------------------------------------------
-# VAPID
-# ---------------------------------------------------------------------------
-
 subscriptions_lock = threading.Lock()
 
 
-def ensure_vapid_keys() -> Vapid:
-    env_key = os.environ.get("VAPID_PRIVATE_KEY_PEM", "").strip()
+def ensure_vapid_keys():
+    env_key = os.environ.get(
+        "VAPID_PRIVATE_KEY_PEM",
+        ""
+    ).strip()
 
     if env_key:
         with open(VAPID_PRIVATE_FILE, "w") as f:
-            f.write(env_key.replace("\\n", "\n"))
+            f.write(
+                env_key.replace("\\n", "\n")
+            )
 
     elif not os.path.exists(VAPID_PRIVATE_FILE):
         from cryptography.hazmat.primitives.asymmetric import ec
         from cryptography.hazmat.primitives import serialization
 
-        private_key = ec.generate_private_key(ec.SECP256R1())
+        private_key = ec.generate_private_key(
+            ec.SECP256R1()
+        )
 
         pem = private_key.private_bytes(
             encoding=serialization.Encoding.PEM,
@@ -125,15 +126,20 @@ def ensure_vapid_keys() -> Vapid:
         with open(VAPID_PRIVATE_FILE, "wb") as f:
             f.write(pem)
 
-        print(f"[vapid] کلید جدید ساخته شد: {VAPID_PRIVATE_FILE}")
+        print(
+            f"[vapid] کلید جدید ساخته شد: "
+            f"{VAPID_PRIVATE_FILE}"
+        )
 
-    return Vapid.from_file(VAPID_PRIVATE_FILE)
+    return Vapid.from_file(
+        VAPID_PRIVATE_FILE
+    )
 
 
 vapid_instance = ensure_vapid_keys()
 
 
-def get_vapid_public_key_b64() -> str:
+def get_vapid_public_key_b64():
     import base64
 
     numbers = vapid_instance.public_key.public_numbers()
@@ -143,17 +149,19 @@ def get_vapid_public_key_b64() -> str:
 
     raw = b"\x04" + x + y
 
-    return base64.urlsafe_b64encode(raw).rstrip(b"=").decode("utf-8")
+    return base64.urlsafe_b64encode(
+        raw
+    ).rstrip(b"=").decode("utf-8")
 
-
-# ---------------------------------------------------------------------------
-# Subscriptions
-# ---------------------------------------------------------------------------
 
 def load_subscriptions():
     if os.path.exists(SUBSCRIPTIONS_FILE):
         try:
-            with open(SUBSCRIPTIONS_FILE, "r", encoding="utf-8") as f:
+            with open(
+                SUBSCRIPTIONS_FILE,
+                "r",
+                encoding="utf-8"
+            ) as f:
                 return json.load(f)
         except Exception:
             pass
@@ -163,20 +171,30 @@ def load_subscriptions():
 
 def save_subscriptions(subs):
     try:
-        with open(SUBSCRIPTIONS_FILE, "w", encoding="utf-8") as f:
-            json.dump(subs, f, ensure_ascii=False)
+        with open(
+            SUBSCRIPTIONS_FILE,
+            "w",
+            encoding="utf-8"
+        ) as f:
+            json.dump(
+                subs,
+                f,
+                ensure_ascii=False
+            )
     except Exception as e:
-        print(f"[save_subscriptions] error: {e}")
+        print(
+            f"[save_subscriptions] error: {e}"
+        )
 
 
 subscriptions = load_subscriptions()
 
 
-# ---------------------------------------------------------------------------
-# Push notifications
-# ---------------------------------------------------------------------------
-
-def send_push(subscription_info: dict, title: str, body: str) -> bool:
+def send_push(
+    subscription_info,
+    title,
+    body
+):
     try:
         webpush(
             subscription_info=subscription_info,
@@ -193,10 +211,21 @@ def send_push(subscription_info: dict, title: str, body: str) -> bool:
         return True
 
     except WebPushException as e:
-        status = getattr(e.response, "status_code", None)
+        response = getattr(
+            e,
+            "response",
+            None
+        )
+
+        status = getattr(
+            response,
+            "status_code",
+            None
+        )
 
         print(
-            f"[send_push] خطا (status={status}): {e}"
+            f"[send_push] خطا "
+            f"(status={status}): {e}"
         )
 
         return status not in (404, 410)
@@ -209,19 +238,18 @@ def send_push(subscription_info: dict, title: str, body: str) -> bool:
         return True
 
 
-def check_and_fire_alerts(new_price: float):
-
+def check_and_fire_alerts(new_price):
     with subscriptions_lock:
-
         changed = False
         still_valid = []
 
         for sub in subscriptions:
-
             alive = True
 
-            for alert in sub.get("alerts", []):
-
+            for alert in sub.get(
+                "alerts",
+                []
+            ):
                 if alert.get("firedAt"):
                     continue
 
@@ -232,11 +260,11 @@ def check_and_fire_alerts(new_price: float):
                 )
 
                 if hit:
-
                     ok = send_push(
                         sub["subscription"],
                         "قیمت دلار",
-                        f"دلار به {int(new_price):,} تومان رسید",
+                        f"دلار به "
+                        f"{int(new_price):,} تومان رسید",
                     )
 
                     if not ok:
@@ -244,7 +272,9 @@ def check_and_fire_alerts(new_price: float):
                         break
 
                     alert["firedAt"] = (
-                        datetime.now(timezone.utc).isoformat()
+                        datetime.now(
+                            timezone.utc
+                        ).isoformat()
                     )
 
                     changed = True
@@ -256,29 +286,26 @@ def check_and_fire_alerts(new_price: float):
 
         if changed:
             subscriptions[:] = still_valid
-            save_subscriptions(subscriptions)
+            save_subscriptions(
+                subscriptions
+            )
 
 
-# ---------------------------------------------------------------------------
-# Daily tracking
-# ---------------------------------------------------------------------------
-
-def update_daily_tracking(new_price: float):
-
+def update_daily_tracking(new_price):
     today = datetime.now(
         TEHRAN_TZ
     ).strftime("%Y-%m-%d")
 
     if daily["date"] is None:
-
         daily["date"] = today
         daily["today_open"] = new_price
         daily["today_high"] = new_price
         daily["today_low"] = new_price
 
     elif daily["date"] != today:
-
-        daily["yesterday_close"] = daily["last_price"]
+        daily["yesterday_close"] = (
+            daily["last_price"]
+        )
 
         daily["date"] = today
         daily["today_open"] = new_price
@@ -286,7 +313,6 @@ def update_daily_tracking(new_price: float):
         daily["today_low"] = new_price
 
     else:
-
         daily["today_high"] = max(
             daily["today_high"] or new_price,
             new_price
@@ -302,16 +328,14 @@ def update_daily_tracking(new_price: float):
     save_daily_data(daily)
 
 
-# ---------------------------------------------------------------------------
-# Price
-# ---------------------------------------------------------------------------
-
-def fetch_simulated_price(previous_price: float) -> float:
-
+def fetch_simulated_price(previous_price):
     if previous_price == 0:
         previous_price = 68500
 
-    drift = random.uniform(-40, 40)
+    drift = random.uniform(
+        -40,
+        40
+    )
 
     return round(
         previous_price + drift,
@@ -319,8 +343,7 @@ def fetch_simulated_price(previous_price: float) -> float:
     )
 
 
-def fetch_real_price() -> float:
-
+def fetch_real_price():
     if not BRSAPI_KEY:
         raise RuntimeError(
             "BRSAPI_KEY تنظیم نشده."
@@ -328,7 +351,8 @@ def fetch_real_price() -> float:
 
     url = (
         "https://Api.BrsApi.ir/"
-        f"Market/Gold_Currency.php?key={BRSAPI_KEY}"
+        f"Market/Gold_Currency.php"
+        f"?key={BRSAPI_KEY}"
     )
 
     resp = requests.get(
@@ -355,72 +379,86 @@ def fetch_real_price() -> float:
         items = []
 
     for item in items:
-
         symbol = str(
-            item.get("symbol", "")
+            item.get(
+                "symbol",
+                ""
+            )
         ).upper()
 
         name_en = str(
-            item.get("name_en", "")
+            item.get(
+                "name_en",
+                ""
+            )
         ).lower()
 
-        if symbol == "USD" or "dollar" in name_en:
-
+        if (
+            symbol == "USD"
+            or "dollar" in name_en
+        ):
             price_str = str(
-                item.get("price", "")
-            ).replace(",", "").strip()
+                item.get(
+                    "price",
+                    ""
+                )
+            ).replace(
+                ",",
+                ""
+            ).strip()
 
             if not price_str:
                 break
 
-            return float(price_str)
+            return float(
+                price_str
+            )
 
     raise ValueError(
-        "آیتم دلار (USD) توی پاسخ API پیدا نشد."
+        "آیتم دلار (USD) "
+        "توی پاسخ API پیدا نشد."
     )
 
 
-# ---------------------------------------------------------------------------
-# Background updater
-# ---------------------------------------------------------------------------
-
 def price_updater_loop():
-
     while True:
-
         try:
-
             with state_lock:
                 old_price = state["price"]
 
             if USE_REAL_API:
                 new_price = fetch_real_price()
             else:
-                new_price = fetch_simulated_price(old_price)
+                new_price = fetch_simulated_price(
+                    old_price
+                )
 
             print(
-                f"[price_updater_loop] قیمت گرفته شد: {new_price}"
+                f"[price_updater_loop] "
+                f"قیمت گرفته شد: {new_price}"
             )
 
             change_percent = 0.0
 
             if old_price:
-
                 change_percent = round(
-                    (new_price - old_price)
-                    / old_price
-                    * 100,
+                    (
+                        (new_price - old_price)
+                        / old_price
+                        * 100
+                    ),
                     3
                 )
 
-            update_daily_tracking(new_price)
+            update_daily_tracking(
+                new_price
+            )
 
             now_iso = datetime.now(
                 timezone.utc
             ).isoformat()
 
             with state_lock:
-
                 state["price"] = new_price
 
                 state["change_percent"] = (
@@ -438,19 +476,27 @@ def price_updater_loop():
                 )
 
                 state["today_open"] = (
-                    daily.get("today_open")
+                    daily.get(
+                        "today_open"
+                    )
                 )
 
                 state["yesterday_close"] = (
-                    daily.get("yesterday_close")
+                    daily.get(
+                        "yesterday_close"
+                    )
                 )
 
                 state["today_high"] = (
-                    daily.get("today_high")
+                    daily.get(
+                        "today_high"
+                    )
                 )
 
                 state["today_low"] = (
-                    daily.get("today_low")
+                    daily.get(
+                        "today_low"
+                    )
                 )
 
                 price_history.append({
@@ -463,9 +509,9 @@ def price_updater_loop():
             )
 
         except Exception as e:
-
             print(
-                f"[price_updater_loop] error: {e}"
+                f"[price_updater_loop] "
+                f"error: {e}"
             )
 
         time.sleep(
@@ -473,40 +519,38 @@ def price_updater_loop():
         )
 
 
-# ---------------------------------------------------------------------------
-# Routes
-# ---------------------------------------------------------------------------
-
 @app.route("/")
 def index():
-    return render_template("index.html")
+    return render_template(
+        "index.html"
+    )
 
 
 @app.route("/api/price")
 def api_price():
-
     with state_lock:
-
         payload = dict(state)
-
         payload["history"] = list(
             price_history
         )
 
-    return jsonify(payload)
+    return jsonify(
+        payload
+    )
 
 
 @app.route("/api/vapid-public-key")
 def api_vapid_public_key():
-
     return jsonify({
         "key": get_vapid_public_key_b64()
     })
 
 
-@app.route("/api/subscribe", methods=["POST"])
+@app.route(
+    "/api/subscribe",
+    methods=["POST"]
+)
 def api_subscribe():
-
     body = request.get_json(
         force=True,
         silent=True
@@ -525,16 +569,15 @@ def api_subscribe():
         not subscription_info
         or "endpoint" not in subscription_info
     ):
-
         return jsonify({
             "ok": False,
             "error": "invalid subscription"
         }), 400
 
     with subscriptions_lock:
-
         subscriptions[:] = [
-            s for s in subscriptions
+            s
+            for s in subscriptions
             if s["subscription"]["endpoint"]
             != subscription_info["endpoint"]
         ]
@@ -553,9 +596,11 @@ def api_subscribe():
     })
 
 
-@app.route("/api/unsubscribe", methods=["POST"])
+@app.route(
+    "/api/unsubscribe",
+    methods=["POST"]
+)
 def api_unsubscribe():
-
     body = request.get_json(
         force=True,
         silent=True
@@ -566,9 +611,9 @@ def api_unsubscribe():
     )
 
     with subscriptions_lock:
-
         subscriptions[:] = [
-            s for s in subscriptions
+            s
+            for s in subscriptions
             if s["subscription"]["endpoint"]
             != endpoint
         ]
@@ -582,10 +627,6 @@ def api_unsubscribe():
     })
 
 
-# ---------------------------------------------------------------------------
-# Start background thread
-# ---------------------------------------------------------------------------
-
 _updater_thread = threading.Thread(
     target=price_updater_loop,
     daemon=True
@@ -595,7 +636,6 @@ _updater_thread.start()
 
 
 if __name__ == "__main__":
-
     port = int(
         os.environ.get(
             "PORT",
@@ -609,4 +649,3 @@ if __name__ == "__main__":
         debug=True,
         use_reloader=False
     )
-```

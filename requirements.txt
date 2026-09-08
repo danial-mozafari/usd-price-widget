@@ -1,0 +1,7 @@
+Flask==3.0.3
+pywebview==5.2
+requests==2.32.3
+tzdata==2024.1
+pywebpush==2.0.0
+py-vapid==1.9.2
+gunicorn==22.0.0

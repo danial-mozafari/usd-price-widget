@@ -1,4 +1,3 @@
-```python
 """
 USD Price Dashboard - Flask backend
 """

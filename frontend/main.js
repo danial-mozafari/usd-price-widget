@@ -1,4 +1,3 @@
-```javascript
 // ---------------------------------------------------------------------------
 // تنظیمات
 // ---------------------------------------------------------------------------
@@ -53,51 +52,68 @@ themeToggleBtn.addEventListener("click", () => {
 // ---------------------------------------------------------------------------
 // نمودار
 // ---------------------------------------------------------------------------
+// نکته‌ی مهم: اگه به هر دلیلی (فیلترینگ، قطعی شبکه) کتابخونه‌ی Chart.js از
+// CDN لود نشه، نباید کل صفحه بخوابه. این بخش رو کاملاً محافظت‌شده نوشتیم تا
+// اگه نمودار درست نشه، بقیه‌ی برنامه (خصوصاً گرفتن قیمت) بدون مشکل کار کنه.
 
-const ctx = document.getElementById("priceChart").getContext("2d");
+let chart = null;
 
-const gradient = ctx.createLinearGradient(0, 0, 0, 110);
-gradient.addColorStop(0, "rgba(129, 140, 248, 0.35)");
-gradient.addColorStop(1, "rgba(129, 140, 248, 0)");
+if (typeof Chart === "undefined") {
+  console.warn("Chart.js لود نشد - نمودار غیرفعال میشه ولی بقیه‌ی برنامه کار می‌کنه");
+} else {
+  try {
+    const chartCanvas = document.getElementById("priceChart");
+    const ctx = chartCanvas.getContext("2d");
 
-const chart = new Chart(ctx, {
-  type: "line",
-  data: {
-    labels: [],
-    datasets: [{
-      data: [],
-      borderColor: "#818cf8",
-      backgroundColor: gradient,
-      borderWidth: 2,
-      pointRadius: 0,
-      tension: 0.35,
-      fill: true,
-    }],
-  },
-  options: {
-    responsive: true,
-    maintainAspectRatio: false,
-    animation: { duration: 400 },
-    plugins: {
-      legend: { display: false },
-      tooltip: { enabled: false },
-    },
-    scales: {
-      x: { display: false },
-      y: { display: false },
-    },
-  },
-});
+    const gradient = ctx.createLinearGradient(0, 0, 0, 110);
+    gradient.addColorStop(0, "rgba(129, 140, 248, 0.35)");
+    gradient.addColorStop(1, "rgba(129, 140, 248, 0)");
+
+    chart = new Chart(ctx, {
+      type: "line",
+      data: {
+        labels: [],
+        datasets: [{
+          data: [],
+          borderColor: "#818cf8",
+          backgroundColor: gradient,
+          borderWidth: 2,
+          pointRadius: 0,
+          tension: 0.35,
+          fill: true,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: { duration: 400 },
+        plugins: {
+          legend: { display: false },
+          tooltip: { enabled: false },
+        },
+        scales: {
+          x: { display: false },
+          y: { display: false },
+        },
+      },
+    });
+  } catch (e) {
+    console.warn("ساخت نمودار با خطا مواجه شد:", e);
+    chart = null;
+  }
+}
 
 function updateChart(history) {
-  if (!history || history.length === 0) return;
+  if (!chart || !history || history.length === 0) return;
 
-  const recent = history.slice(-40);
-
-  chart.data.labels = recent.map((_, i) => i);
-  chart.data.datasets[0].data = recent.map((h) => h.p);
-
-  chart.update("none");
+  try {
+    const recent = history.slice(-40);
+    chart.data.labels = recent.map((_, i) => i);
+    chart.data.datasets[0].data = recent.map((h) => h.p);
+    chart.update("none");
+  } catch (e) {
+    console.warn("آپدیت نمودار با خطا مواجه شد:", e);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -476,4 +492,3 @@ async function fetchPrice() {
 fetchPrice();
 
 setInterval(fetchPrice, 3000);
-```

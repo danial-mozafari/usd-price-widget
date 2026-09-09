@@ -68,7 +68,7 @@ SUBSCRIPTIONS_FILE = os.path.join(
 
 VAPID_CLAIM_EMAIL = os.environ.get(
     "VAPID_CLAIM_EMAIL",
-    "mailto:example@example.com"
+    "mailto:push-notifications@usd-price-widget.app"
 )
 
 USE_REAL_API = (
@@ -385,9 +385,15 @@ def send_push(
             None
         )
 
+        body = getattr(
+            response,
+            "text",
+            None
+        )
+
         print(
             f"[send_push] error "
-            f"status={status}: {e}"
+            f"status={status} body={body}: {e}"
         )
 
         return status not in (

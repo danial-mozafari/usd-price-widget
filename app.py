@@ -84,6 +84,16 @@ BRSAPI_KEY = os.environ.get(
     ""
 ).strip()
 
+SUPABASE_URL = os.environ.get(
+    "SUPABASE_URL",
+    ""
+).strip().rstrip("/")
+
+SUPABASE_SECRET_KEY = os.environ.get(
+    "SUPABASE_SECRET_KEY",
+    ""
+).strip()
+
 
 # =========================
 # API settings
@@ -139,55 +149,72 @@ price_history = deque(
 
 
 # =========================
+# Supabase (ذخیره‌سازی دائمی)
+# =========================
+# چرا: فایل محلی روی Render هر بار که سرویس دوباره دیپلوی/ری‌استارت میشه
+# پاک میشه (دیسک موقتیه). برای همین آمار روز و وضعیت هشدارها رو توی یک
+# جدول ساده روی Supabase (رایگان، دائمی) نگه می‌داریم.
+
+def _supabase_headers():
+    return {
+        "apikey": SUPABASE_SECRET_KEY,
+        "Authorization": f"Bearer {SUPABASE_SECRET_KEY}",
+        "Content-Type": "application/json",
+    }
+
+
+def kv_get(key, default):
+    if not SUPABASE_URL or not SUPABASE_SECRET_KEY:
+        return default
+    try:
+        resp = requests.get(
+            f"{SUPABASE_URL}/rest/v1/kv_store",
+            headers=_supabase_headers(),
+            params={"key": f"eq.{key}", "select": "value"},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        rows = resp.json()
+        if rows:
+            return rows[0]["value"]
+    except Exception as e:
+        print(f"[kv_get:{key}] error: {e}")
+    return default
+
+
+def kv_set(key, value):
+    if not SUPABASE_URL or not SUPABASE_SECRET_KEY:
+        return
+    try:
+        resp = requests.post(
+            f"{SUPABASE_URL}/rest/v1/kv_store",
+            headers={**_supabase_headers(), "Prefer": "resolution=merge-duplicates"},
+            params={"on_conflict": "key"},
+            json={"key": key, "value": value},
+            timeout=10,
+        )
+        resp.raise_for_status()
+    except Exception as e:
+        print(f"[kv_set:{key}] error: {e}")
+
+
+# =========================
 # Daily data
 # =========================
 
 def load_daily_data():
-
-    if os.path.exists(
-        DAILY_FILE
-    ):
-        try:
-            with open(
-                DAILY_FILE,
-                "r",
-                encoding="utf-8"
-            ) as f:
-                return json.load(f)
-
-        except Exception as e:
-            print(
-                f"[load_daily_data] error: {e}"
-            )
-
-    return {
+    return kv_get("daily_data", {
         "date": None,
         "today_open": None,
         "yesterday_close": None,
         "last_price": None,
         "today_high": None,
         "today_low": None,
-    }
+    })
 
 
 def save_daily_data(data):
-
-    try:
-        with open(
-            DAILY_FILE,
-            "w",
-            encoding="utf-8"
-        ) as f:
-            json.dump(
-                data,
-                f,
-                ensure_ascii=False
-            )
-
-    except Exception as e:
-        print(
-            f"[save_daily_data] error: {e}"
-        )
+    kv_set("daily_data", data)
 
 
 daily = load_daily_data()
@@ -301,45 +328,11 @@ subscriptions_lock = threading.Lock()
 
 
 def load_subscriptions():
-
-    if os.path.exists(
-        SUBSCRIPTIONS_FILE
-    ):
-
-        try:
-            with open(
-                SUBSCRIPTIONS_FILE,
-                "r",
-                encoding="utf-8"
-            ) as f:
-
-                return json.load(f)
-
-        except Exception:
-            pass
-
-    return []
+    return kv_get("subscriptions", [])
 
 
 def save_subscriptions(subs):
-
-    try:
-        with open(
-            SUBSCRIPTIONS_FILE,
-            "w",
-            encoding="utf-8"
-        ) as f:
-
-            json.dump(
-                subs,
-                f,
-                ensure_ascii=False
-            )
-
-    except Exception as e:
-        print(
-            f"[save_subscriptions] error: {e}"
-        )
+    kv_set("subscriptions", subs)
 
 
 subscriptions = load_subscriptions()

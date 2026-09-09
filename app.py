@@ -281,8 +281,10 @@ def ensure_vapid_keys():
             )
 
         print(
-            "[vapid] کلید جدید ساخته شد"
+            "[vapid] کلید جدید ساخته شد - این رو به‌عنوان "
+            "VAPID_PRIVATE_KEY_PEM ست کن تا دائمی بمونه:"
         )
+        print(pem.decode())
 
     return Vapid.from_file(
         VAPID_PRIVATE_FILE

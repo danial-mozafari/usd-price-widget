@@ -176,6 +176,35 @@ body {
   font-weight: 600;
 }
 
+.chart-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.chart-header .section-title {
+  margin-bottom: 0;
+}
+
+.chart-range-change {
+  font-size: 11px;
+  font-weight: 700;
+  direction: ltr;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.chart-range-change.up {
+  color: var(--accent-up);
+  background: rgba(52, 211, 153, 0.15);
+}
+
+.chart-range-change.down {
+  color: var(--accent-down);
+  background: rgba(248, 113, 113, 0.15);
+}
+
 canvas#priceChart {
   width: 100% !important;
   height: 150px !important;

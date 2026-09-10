@@ -62,6 +62,7 @@ themeToggleBtn.addEventListener("click", () => {
 const chartCanvas = document.getElementById("priceChart");
 const chartCtx = chartCanvas.getContext("2d");
 const chartTooltip = document.getElementById("chartTooltip");
+const chartRangeChangeEl = document.getElementById("chartRangeChange");
 
 let lastHistory = [];
 let hoverIndex = null;
@@ -113,16 +114,38 @@ function drawChart(history) {
   }));
 
   const textDim = cssVar("--text-dim") || "#94a3b8";
-  const accent = cssVar("--accent") || "#818cf8";
-  const gridColor = "rgba(148, 163, 184, 0.15)";
+  const upColor = cssVar("--accent-up") || "#34d399";
+  const downColor = cssVar("--accent-down") || "#f87171";
 
-  // --- خطوط راهنمای افقی + برچسب قیمت (۳ سطح: کمترین، میانه، بیشترین) ---
-  const gridLevels = [minPrice, (minPrice + maxPrice) / 2, maxPrice];
+  // روند این بازه: اگه آخرین قیمت از اولین قیمتِ همین بازه بیشتر باشه، سبز؛
+  // وگرنه قرمز - دقیقاً مثل اپ‌های صرافی حرفه‌ای
+  const trendUp = prices[prices.length - 1] >= prices[0];
+  const trendColor = trendUp ? upColor : downColor;
+
+  const rangeChangePct =
+    prices[0] !== 0
+      ? (((prices[prices.length - 1] - prices[0]) / prices[0]) * 100).toFixed(2)
+      : "0.00";
+
+  if (chartRangeChangeEl) {
+    chartRangeChangeEl.textContent = `${trendUp ? "+" : ""}${rangeChangePct}%`;
+    chartRangeChangeEl.classList.remove("up", "down");
+    chartRangeChangeEl.classList.add(trendUp ? "up" : "down");
+  }
+
+  // --- خطوط راهنمای افقی نقطه‌چین + برچسب قیمت (۴ سطح) ---
+  const gridLevels = [
+    maxPrice,
+    minPrice + (range * 2) / 3,
+    minPrice + range / 3,
+    minPrice,
+  ];
 
   chartCtx.font = "9px sans-serif";
   chartCtx.fillStyle = textDim;
   chartCtx.textBaseline = "middle";
   chartCtx.textAlign = "left";
+  chartCtx.setLineDash([3, 4]);
 
   gridLevels.forEach((level) => {
     const y = padTop + plotHeight - ((level - minPrice) / range) * plotHeight;
@@ -130,12 +153,14 @@ function drawChart(history) {
     chartCtx.beginPath();
     chartCtx.moveTo(padLeft, y);
     chartCtx.lineTo(displayWidth - padRight, y);
-    chartCtx.strokeStyle = gridColor;
+    chartCtx.strokeStyle = "rgba(148, 163, 184, 0.18)";
     chartCtx.lineWidth = 1;
     chartCtx.stroke();
 
     chartCtx.fillText(numberFmt.format(Math.round(level)), 0, y);
   });
+
+  chartCtx.setLineDash([]);
 
   // --- برچسب‌های زمان روی محور افقی (اول، وسط، آخر) ---
   chartCtx.textAlign = "center";
@@ -148,10 +173,11 @@ function drawChart(history) {
     chartCtx.fillText(label, points[i].x, displayHeight - padBottom + 4);
   });
 
-  // --- ناحیه‌ی زیر خط (گرادیانی) ---
+  // --- ناحیه‌ی زیر خط (گرادیانی، هم‌رنگ با روند) ---
   const gradient = chartCtx.createLinearGradient(0, padTop, 0, displayHeight - padBottom);
-  gradient.addColorStop(0, "rgba(129, 140, 248, 0.35)");
-  gradient.addColorStop(1, "rgba(129, 140, 248, 0)");
+  const glowRgb = trendUp ? "52, 211, 153" : "248, 113, 113";
+  gradient.addColorStop(0, `rgba(${glowRgb}, 0.32)`);
+  gradient.addColorStop(1, `rgba(${glowRgb}, 0)`);
 
   function drawSmoothPath() {
     chartCtx.beginPath();
@@ -173,8 +199,8 @@ function drawChart(history) {
   chartCtx.fill();
 
   drawSmoothPath();
-  chartCtx.strokeStyle = accent;
-  chartCtx.lineWidth = 2;
+  chartCtx.strokeStyle = trendColor;
+  chartCtx.lineWidth = 2.5;
   chartCtx.lineJoin = "round";
   chartCtx.lineCap = "round";
   chartCtx.stroke();
@@ -182,12 +208,17 @@ function drawChart(history) {
   // --- نقطه‌ی برجسته برای آخرین قیمت ---
   const lastPoint = points[points.length - 1];
   chartCtx.beginPath();
-  chartCtx.arc(lastPoint.x, lastPoint.y, 4, 0, Math.PI * 2);
-  chartCtx.fillStyle = accent;
-  chartCtx.shadowColor = accent;
-  chartCtx.shadowBlur = 8;
+  chartCtx.arc(lastPoint.x, lastPoint.y, 4.5, 0, Math.PI * 2);
+  chartCtx.fillStyle = trendColor;
+  chartCtx.shadowColor = trendColor;
+  chartCtx.shadowBlur = 10;
   chartCtx.fill();
   chartCtx.shadowBlur = 0;
+
+  chartCtx.beginPath();
+  chartCtx.arc(lastPoint.x, lastPoint.y, 2, 0, Math.PI * 2);
+  chartCtx.fillStyle = "#ffffff";
+  chartCtx.fill();
 
   // --- نقطه و خط راهنما، وقتی کاربر لمس/کلیک کرده ---
   if (hoverIndex !== null && points[hoverIndex]) {

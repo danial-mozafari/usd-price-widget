@@ -348,20 +348,25 @@ async function setupPushAndSync(alerts) {
     let subscription =
       await registration.pushManager.getSubscription();
 
-    if (!subscription) {
-      const res = await fetch(
-        `${API_BASE}/api/vapid-public-key`
-      );
-
-      const { key } = await res.json();
-
-      subscription =
-        await registration.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey:
-            urlBase64ToUint8Array(key),
-        });
+    // همیشه اشتراک قدیمی رو پاک می‌کنیم و یه اشتراک تازه با کلید فعلی
+    // سرور می‌سازیم - چون اگه کلید سرور عوض شده باشه، اشتراک قدیمی
+    // دیگه معتبر نیست (باعث خطای VapidPkHashMismatch میشه)
+    if (subscription) {
+      await subscription.unsubscribe();
     }
+
+    const res = await fetch(
+      `${API_BASE}/api/vapid-public-key`
+    );
+
+    const { key } = await res.json();
+
+    subscription =
+      await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey:
+          urlBase64ToUint8Array(key),
+      });
 
     await fetch(`${API_BASE}/api/subscribe`, {
       method: "POST",

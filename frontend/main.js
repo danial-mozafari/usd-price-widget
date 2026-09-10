@@ -47,72 +47,228 @@ applyTheme(savedTheme);
 themeToggleBtn.addEventListener("click", () => {
   const current = localStorage.getItem("usd_widget_theme") || "dark";
   applyTheme(current === "dark" ? "light" : "dark");
+  if (typeof drawChart === "function" && lastHistory.length) {
+    drawChart(lastHistory);
+  }
 });
 
 // ---------------------------------------------------------------------------
-// نمودار
+// نمودار حرفه‌ای (کاملاً با Canvas خام، بدون هیچ کتابخونه‌ی بیرونی)
 // ---------------------------------------------------------------------------
-// نکته‌ی مهم: اگه به هر دلیلی (فیلترینگ، قطعی شبکه) کتابخونه‌ی Chart.js از
-// CDN لود نشه، نباید کل صفحه بخوابه. این بخش رو کاملاً محافظت‌شده نوشتیم تا
-// اگه نمودار درست نشه، بقیه‌ی برنامه (خصوصاً گرفتن قیمت) بدون مشکل کار کنه.
+// چرا بدون کتابخونه: تجربه نشون داد CDN های خارجی (jsdelivr, cdnjs) توی
+// ایران فیلترن. این نمودار قیمت + ساعت رو نشون میده، رنگش با دارک/لایت
+// مود هماهنگه، و با لمس/کلیک قیمت دقیق هر نقطه رو نشون میده.
 
-let chart = null;
+const chartCanvas = document.getElementById("priceChart");
+const chartCtx = chartCanvas.getContext("2d");
+const chartTooltip = document.getElementById("chartTooltip");
 
-if (typeof Chart === "undefined") {
-  console.warn("Chart.js لود نشد - نمودار غیرفعال میشه ولی بقیه‌ی برنامه کار می‌کنه");
-} else {
-  try {
-    const chartCanvas = document.getElementById("priceChart");
-    const ctx = chartCanvas.getContext("2d");
+let lastHistory = [];
+let hoverIndex = null;
 
-    const gradient = ctx.createLinearGradient(0, 0, 0, 110);
-    gradient.addColorStop(0, "rgba(129, 140, 248, 0.35)");
-    gradient.addColorStop(1, "rgba(129, 140, 248, 0)");
+function cssVar(name) {
+  return getComputedStyle(document.documentElement)
+    .getPropertyValue(name)
+    .trim();
+}
 
-    chart = new Chart(ctx, {
-      type: "line",
-      data: {
-        labels: [],
-        datasets: [{
-          data: [],
-          borderColor: "#818cf8",
-          backgroundColor: gradient,
-          borderWidth: 2,
-          pointRadius: 0,
-          tension: 0.35,
-          fill: true,
-        }],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        animation: { duration: 400 },
-        plugins: {
-          legend: { display: false },
-          tooltip: { enabled: false },
-        },
-        scales: {
-          x: { display: false },
-          y: { display: false },
-        },
-      },
-    });
-  } catch (e) {
-    console.warn("ساخت نمودار با خطا مواجه شد:", e);
-    chart = null;
+function drawChart(history) {
+  if (!history || history.length === 0) return;
+
+  const dpr = window.devicePixelRatio || 1;
+  const displayWidth = chartCanvas.clientWidth;
+  const displayHeight = chartCanvas.clientHeight || 150;
+
+  if (
+    chartCanvas.width !== Math.round(displayWidth * dpr) ||
+    chartCanvas.height !== Math.round(displayHeight * dpr)
+  ) {
+    chartCanvas.width = Math.round(displayWidth * dpr);
+    chartCanvas.height = Math.round(displayHeight * dpr);
+  }
+
+  chartCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  chartCtx.clearRect(0, 0, displayWidth, displayHeight);
+
+  const recent = history.slice(-40);
+  const prices = recent.map((h) => h.p);
+  const minPrice = Math.min(...prices);
+  const maxPrice = Math.max(...prices);
+  const range = maxPrice - minPrice || 1;
+
+  const padLeft = 52;
+  const padRight = 8;
+  const padTop = 10;
+  const padBottom = 20;
+
+  const plotWidth = displayWidth - padLeft - padRight;
+  const plotHeight = displayHeight - padTop - padBottom;
+
+  const stepX =
+    recent.length > 1 ? plotWidth / (recent.length - 1) : plotWidth;
+
+  const points = prices.map((p, i) => ({
+    x: padLeft + i * stepX,
+    y: padTop + plotHeight - ((p - minPrice) / range) * plotHeight,
+  }));
+
+  const textDim = cssVar("--text-dim") || "#94a3b8";
+  const accent = cssVar("--accent") || "#818cf8";
+  const gridColor = "rgba(148, 163, 184, 0.15)";
+
+  // --- خطوط راهنمای افقی + برچسب قیمت (۳ سطح: کمترین، میانه، بیشترین) ---
+  const gridLevels = [minPrice, (minPrice + maxPrice) / 2, maxPrice];
+
+  chartCtx.font = "9px sans-serif";
+  chartCtx.fillStyle = textDim;
+  chartCtx.textBaseline = "middle";
+  chartCtx.textAlign = "left";
+
+  gridLevels.forEach((level) => {
+    const y = padTop + plotHeight - ((level - minPrice) / range) * plotHeight;
+
+    chartCtx.beginPath();
+    chartCtx.moveTo(padLeft, y);
+    chartCtx.lineTo(displayWidth - padRight, y);
+    chartCtx.strokeStyle = gridColor;
+    chartCtx.lineWidth = 1;
+    chartCtx.stroke();
+
+    chartCtx.fillText(numberFmt.format(Math.round(level)), 0, y);
+  });
+
+  // --- برچسب‌های زمان روی محور افقی (اول، وسط، آخر) ---
+  chartCtx.textAlign = "center";
+  chartCtx.textBaseline = "top";
+
+  const timeIndexes = [0, Math.floor(recent.length / 2), recent.length - 1];
+  timeIndexes.forEach((i) => {
+    if (!recent[i]) return;
+    const label = timeFmt.format(new Date(recent[i].t));
+    chartCtx.fillText(label, points[i].x, displayHeight - padBottom + 4);
+  });
+
+  // --- ناحیه‌ی زیر خط (گرادیانی) ---
+  const gradient = chartCtx.createLinearGradient(0, padTop, 0, displayHeight - padBottom);
+  gradient.addColorStop(0, "rgba(129, 140, 248, 0.35)");
+  gradient.addColorStop(1, "rgba(129, 140, 248, 0)");
+
+  function drawSmoothPath() {
+    chartCtx.beginPath();
+    chartCtx.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i++) {
+      const prev = points[i - 1];
+      const curr = points[i];
+      const midX = (prev.x + curr.x) / 2;
+      chartCtx.quadraticCurveTo(prev.x, prev.y, midX, (prev.y + curr.y) / 2);
+    }
+    chartCtx.lineTo(points[points.length - 1].x, points[points.length - 1].y);
+  }
+
+  drawSmoothPath();
+  chartCtx.lineTo(points[points.length - 1].x, displayHeight - padBottom);
+  chartCtx.lineTo(points[0].x, displayHeight - padBottom);
+  chartCtx.closePath();
+  chartCtx.fillStyle = gradient;
+  chartCtx.fill();
+
+  drawSmoothPath();
+  chartCtx.strokeStyle = accent;
+  chartCtx.lineWidth = 2;
+  chartCtx.lineJoin = "round";
+  chartCtx.lineCap = "round";
+  chartCtx.stroke();
+
+  // --- نقطه‌ی برجسته برای آخرین قیمت ---
+  const lastPoint = points[points.length - 1];
+  chartCtx.beginPath();
+  chartCtx.arc(lastPoint.x, lastPoint.y, 4, 0, Math.PI * 2);
+  chartCtx.fillStyle = accent;
+  chartCtx.shadowColor = accent;
+  chartCtx.shadowBlur = 8;
+  chartCtx.fill();
+  chartCtx.shadowBlur = 0;
+
+  // --- نقطه و خط راهنما، وقتی کاربر لمس/کلیک کرده ---
+  if (hoverIndex !== null && points[hoverIndex]) {
+    const hp = points[hoverIndex];
+
+    chartCtx.beginPath();
+    chartCtx.moveTo(hp.x, padTop);
+    chartCtx.lineTo(hp.x, displayHeight - padBottom);
+    chartCtx.strokeStyle = "rgba(148, 163, 184, 0.4)";
+    chartCtx.lineWidth = 1;
+    chartCtx.stroke();
+
+    chartCtx.beginPath();
+    chartCtx.arc(hp.x, hp.y, 4, 0, Math.PI * 2);
+    chartCtx.fillStyle = "#ffffff";
+    chartCtx.fill();
+    chartCtx.strokeStyle = accent;
+    chartCtx.lineWidth = 2;
+    chartCtx.stroke();
   }
 }
 
+function updateChartTooltip() {
+  if (hoverIndex === null || !lastHistory.length) {
+    chartTooltip.classList.remove("show");
+    return;
+  }
+
+  const recent = lastHistory.slice(-40);
+  const point = recent[hoverIndex];
+  if (!point) return;
+
+  const timeLabel = timeFmt.format(new Date(point.t));
+  chartTooltip.textContent = `${numberFmt.format(Math.round(point.p))} تومان - ${timeLabel}`;
+  chartTooltip.classList.add("show");
+}
+
+function handleChartPointer(clientX) {
+  const rect = chartCanvas.getBoundingClientRect();
+  const x = clientX - rect.left;
+
+  const recent = lastHistory.slice(-40);
+  if (!recent.length) return;
+
+  const padLeft = 52;
+  const padRight = 8;
+  const plotWidth = rect.width - padLeft - padRight;
+  const stepX = recent.length > 1 ? plotWidth / (recent.length - 1) : plotWidth;
+
+  let index = Math.round((x - padLeft) / stepX);
+  index = Math.max(0, Math.min(recent.length - 1, index));
+
+  hoverIndex = index;
+  drawChart(lastHistory);
+  updateChartTooltip();
+}
+
+chartCanvas.addEventListener("mousemove", (e) => handleChartPointer(e.clientX));
+chartCanvas.addEventListener("mouseleave", () => {
+  hoverIndex = null;
+  drawChart(lastHistory);
+  updateChartTooltip();
+});
+chartCanvas.addEventListener("touchstart", (e) => handleChartPointer(e.touches[0].clientX), { passive: true });
+chartCanvas.addEventListener("touchmove", (e) => handleChartPointer(e.touches[0].clientX), { passive: true });
+chartCanvas.addEventListener("touchend", () => {
+  hoverIndex = null;
+  drawChart(lastHistory);
+  updateChartTooltip();
+});
+
+window.addEventListener("resize", () => drawChart(lastHistory));
+
 function updateChart(history) {
-  if (!chart || !history || history.length === 0) return;
+  if (!history || history.length === 0) return;
 
   try {
-    const recent = history.slice(-40);
-    chart.data.labels = recent.map((_, i) => i);
-    chart.data.datasets[0].data = recent.map((h) => h.p);
-    chart.update("none");
+    lastHistory = history;
+    drawChart(history);
   } catch (e) {
-    console.warn("آپدیت نمودار با خطا مواجه شد:", e);
+    console.warn("رسم نمودار با خطا مواجه شد:", e);
   }
 }
 

@@ -1086,6 +1086,21 @@ def health():
 
 
 # =========================
+# Debug: چک کردن مستقیم حافظه‌ی سرور (موقتی، برای عیب‌یابی)
+# =========================
+
+@app.route("/api/debug/state")
+def api_debug_state():
+    with subscriptions_lock, state_lock:
+        return jsonify({
+            "current_price": state.get("price"),
+            "use_real_api": USE_REAL_API,
+            "subscriptions_count": len(subscriptions),
+            "subscriptions": subscriptions,
+        })
+
+
+# =========================
 # Start updater
 # =========================
 

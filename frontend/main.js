@@ -555,7 +555,7 @@ async function setupPushAndSync(alerts) {
           urlBase64ToUint8Array(key),
       });
 
-    await fetch(`${API_BASE}/api/subscribe`, {
+    const subRes = await fetch(`${API_BASE}/api/subscribe`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -565,6 +565,15 @@ async function setupPushAndSync(alerts) {
         alerts,
       }),
     });
+
+    // سرور مرجع اصلیه: اگه یه هشدار قبلاً از سمت سرور فایر شده بود،
+    // وضعیتش رو همینجا با گوشی هماهنگ می‌کنیم تا دوباره محلی هم
+    // نوتیف نده (جلوگیری از پیام تکراری)
+    const subData = await subRes.json().catch(() => null);
+    if (subData && subData.alerts) {
+      saveAlerts(subData.alerts);
+      renderAlerts();
+    }
   } catch (err) {
     console.error("خطا در راه‌اندازی Push:", err);
 

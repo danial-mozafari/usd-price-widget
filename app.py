@@ -371,6 +371,11 @@ def send_push(
             },
         )
 
+        print(
+            f"[send_push] موفق - به "
+            f"{subscription_info.get('endpoint', '?')[:60]}... فرستاده شد"
+        )
+
         return True
 
     except WebPushException as e:

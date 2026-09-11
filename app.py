@@ -983,6 +983,29 @@ def api_subscribe():
 
     with subscriptions_lock:
 
+        # اگه سرور قبلاً یه هشدار رو فایر کرده، ولی گوشی (چون بسته بود)
+        # هنوز فکر می‌کنه فایر نشده، نباید وضعیتش دوباره صفر بشه - وگرنه
+        # دوباره Push تکراری می‌فرستیم. اول وضعیت قبلی رو نگه می‌داریم.
+        existing_fired = {}
+
+        for s in subscriptions:
+            if (
+                s["subscription"]["endpoint"]
+                == subscription_info["endpoint"]
+            ):
+                for a in s.get("alerts", []):
+                    if a.get("firedAt"):
+                        existing_fired[a["id"]] = a["firedAt"]
+
+        merged_alerts = []
+        for a in alerts:
+            a = dict(a)
+            if a["id"] in existing_fired and not a.get("firedAt"):
+                a["firedAt"] = existing_fired[a["id"]]
+            merged_alerts.append(a)
+
+        alerts = merged_alerts
+
         subscriptions[:] = [
             s
             for s in subscriptions
@@ -1006,7 +1029,8 @@ def api_subscribe():
         )
 
     return jsonify({
-        "ok": True
+        "ok": True,
+        "alerts": alerts
     })
 
 

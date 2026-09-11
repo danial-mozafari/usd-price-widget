@@ -535,6 +535,8 @@ async function setupPushAndSync(alerts) {
     let subscription =
       await registration.pushManager.getSubscription();
 
+    const oldEndpoint = subscription ? subscription.endpoint : null;
+
     // همیشه اشتراک قدیمی رو پاک می‌کنیم و یه اشتراک تازه با کلید فعلی
     // سرور می‌سازیم - چون اگه کلید سرور عوض شده باشه، اشتراک قدیمی
     // دیگه معتبر نیست (باعث خطای VapidPkHashMismatch میشه)
@@ -573,6 +575,16 @@ async function setupPushAndSync(alerts) {
     if (subData && subData.alerts) {
       saveAlerts(subData.alerts);
       renderAlerts();
+    }
+
+    // حالا که وضعیت جدید با موفقیت ثبت و sync شد، خیالمون راحته که
+    // endpoint قدیمی رو از سرور هم پاک کنیم تا روی هم جمع نشن
+    if (oldEndpoint) {
+      fetch(`${API_BASE}/api/unsubscribe`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ endpoint: oldEndpoint }),
+      }).catch(() => {});
     }
   } catch (err) {
     console.error("خطا در راه‌اندازی Push:", err);

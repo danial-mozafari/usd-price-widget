@@ -595,9 +595,6 @@ async function setupPushAndSync(alerts) {
   }
 }
 
-if (loadAlerts().length > 0) {
-  setupPushAndSync(loadAlerts());
-}
 
 // ---------------------------------------------------------------------------
 // گرفتن قیمت
@@ -702,6 +699,16 @@ async function fetchPrice() {
   }
 }
 
-fetchPrice();
+// نکته‌ی مهم: قبل از شروع چک کردن قیمت، اول صبر می‌کنیم وضعیت هشدارها
+// با سرور هماهنگ بشه - وگرنه اولین چک قیمت زودتر از رسیدن جواب سرور
+// اتفاق می‌افته و یه نوتیف محلی تکراری نشون میده (چون هنوز نمی‌دونه
+// سرور قبلاً همون هشدار رو فرستاده).
+async function startApp() {
+  if (loadAlerts().length > 0) {
+    await setupPushAndSync(loadAlerts());
+  }
+  fetchPrice();
+  setInterval(fetchPrice, 3000);
+}
 
-setInterval(fetchPrice, 3000);
+startApp();

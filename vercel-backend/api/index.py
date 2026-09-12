@@ -309,7 +309,10 @@ def api_price():
     payload["yesterday_close"] = daily.get("yesterday_close")
     payload["today_high"] = daily.get("today_high")
     payload["today_low"] = daily.get("today_low")
-    return jsonify(payload)
+
+    response = jsonify(payload)
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    return response
 
 
 @app.route("/api/tick")

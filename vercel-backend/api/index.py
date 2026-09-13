@@ -113,7 +113,7 @@ def kv_get(key, default):
 def kv_set(key, value):
     if not SUPABASE_URL or not SUPABASE_SECRET_KEY:
         print(f"[kv_set:{key}] SUPABASE_URL یا SUPABASE_SECRET_KEY خالیه")
-        return
+        return {"ok": False, "reason": "missing_config"}
     try:
         resp = requests.post(
             f"{SUPABASE_URL}/rest/v1/kv_store",
@@ -124,10 +124,12 @@ def kv_set(key, value):
         )
         if resp.status_code >= 300:
             print(f"[kv_set:{key}] status={resp.status_code} body={resp.text[:300]}")
-        else:
-            print(f"[kv_set:{key}] موفق status={resp.status_code}")
+            return {"ok": False, "status": resp.status_code, "body": resp.text[:300]}
+        print(f"[kv_set:{key}] موفق status={resp.status_code}")
+        return {"ok": True, "status": resp.status_code}
     except Exception as e:
         print(f"[kv_set:{key}] exception: {e}")
+        return {"ok": False, "exception": str(e)}
 
 
 def load_state():
@@ -340,12 +342,12 @@ def api_tick():
 
     daily = load_daily_data()
     daily = update_daily_tracking(daily, new_price)
-    kv_set("daily_data", daily)
+    debug_daily_save = kv_set("daily_data", daily)
 
     history = load_history()
     history.append({"t": now_iso, "p": new_price})
     history = history[-HISTORY_MAXLEN:]
-    kv_set("price_history", history)
+    debug_history_save = kv_set("price_history", history)
 
     new_state = {
         "price": new_price,
@@ -354,11 +356,19 @@ def api_tick():
         "updated_at": now_iso,
         "source": "real_api" if USE_REAL_API else "simulator",
     }
-    kv_set("current_state", new_state)
+    debug_state_save = kv_set("current_state", new_state)
 
     check_and_fire_alerts(new_price)
 
-    return jsonify({"ok": True, "price": new_price})
+    return jsonify({
+        "ok": True,
+        "price": new_price,
+        "debug_daily_save": debug_daily_save,
+        "debug_history_save": debug_history_save,
+        "debug_state_save": debug_state_save,
+        "supabase_url_set": bool(SUPABASE_URL),
+        "supabase_key_set": bool(SUPABASE_SECRET_KEY),
+    })
 
 
 @app.route("/api/vapid-public-key")

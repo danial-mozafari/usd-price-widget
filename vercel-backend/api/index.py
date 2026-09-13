@@ -89,6 +89,7 @@ def _supabase_headers():
 
 def kv_get(key, default):
     if not SUPABASE_URL or not SUPABASE_SECRET_KEY:
+        print(f"[kv_get:{key}] SUPABASE_URL یا SUPABASE_SECRET_KEY خالیه")
         return default
     try:
         resp = requests.get(
@@ -101,6 +102,7 @@ def kv_get(key, default):
             print(f"[kv_get:{key}] status={resp.status_code} body={resp.text[:300]}")
             return default
         rows = resp.json()
+        print(f"[kv_get:{key}] موفق - {len(rows)} ردیف پیدا شد")
         if rows:
             return rows[0]["value"]
     except Exception as e:
@@ -110,6 +112,7 @@ def kv_get(key, default):
 
 def kv_set(key, value):
     if not SUPABASE_URL or not SUPABASE_SECRET_KEY:
+        print(f"[kv_set:{key}] SUPABASE_URL یا SUPABASE_SECRET_KEY خالیه")
         return
     try:
         resp = requests.post(
@@ -121,6 +124,8 @@ def kv_set(key, value):
         )
         if resp.status_code >= 300:
             print(f"[kv_set:{key}] status={resp.status_code} body={resp.text[:300]}")
+        else:
+            print(f"[kv_set:{key}] موفق status={resp.status_code}")
     except Exception as e:
         print(f"[kv_set:{key}] exception: {e}")
 

@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------------
 
 // آدرس بک‌اند روی Render
-const API_BASE = "https://usd-price-widget-eu.onrender.com";
+const API_BASE = "https://usd-widget-backend-inky.vercel.app";
 
 const numberFmt = new Intl.NumberFormat("en-US");
 const timeFmt = new Intl.DateTimeFormat("en-GB", {

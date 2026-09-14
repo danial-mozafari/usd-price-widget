@@ -20,8 +20,8 @@ self.addEventListener("push", (event) => {
       payload.title || "قیمت دلار",
       {
         body: payload.body || "",
-        icon: "/icon-192.png",
-        badge: "/icon-192.png",
+        icon: "icon-192.png",
+        badge: "icon-192.png",
         vibrate: [120, 60, 120],
       }
     )

@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------------
 
 // آدرس بک‌اند روی Render
-const API_BASE = "https://usd-widget-backend-inky.vercel.app";
+const API_BASE = "https://usd-price-widget-eu.onrender.com";
 
 const numberFmt = new Intl.NumberFormat("en-US");
 const timeFmt = new Intl.DateTimeFormat("en-GB", {
@@ -423,7 +423,7 @@ function checkAlerts(currentPrice) {
         try {
           new Notification("قیمت دلار", {
             body: `دلار به ${numberFmt.format(currentPrice)} تومان رسید`,
-            icon: "/icon-192.png",
+            icon: "icon-192.png",
           });
         } catch (e) {}
       }

@@ -310,9 +310,26 @@ function updateChart(history) {
 const ALERTS_KEY = "usd_widget_alerts";
 
 const alertListEl = document.getElementById("alertList");
-const alertDirectionEl = document.getElementById("alertDirection");
+const alertDirectionGroup = document.getElementById("alertDirectionGroup");
 const alertValueEl = document.getElementById("alertValue");
 const alertAddBtn = document.getElementById("alertAdd");
+
+let selectedDirection = "gte";
+
+alertDirectionGroup.querySelectorAll(".segmented-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    alertDirectionGroup
+      .querySelectorAll(".segmented-btn")
+      .forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+    selectedDirection = btn.dataset.value;
+  });
+});
+
+// فقط رقم انگلیسی قبول می‌کنیم (نه فارسی/عربی)، هر کاراکتر دیگه حذف میشه
+alertValueEl.addEventListener("input", () => {
+  alertValueEl.value = alertValueEl.value.replace(/[^0-9]/g, "");
+});
 
 function loadAlerts() {
   try {
@@ -372,7 +389,7 @@ alertAddBtn.addEventListener("click", () => {
 
   alerts.push({
     id: Date.now().toString(),
-    direction: alertDirectionEl.value,
+    direction: selectedDirection,
     value,
     firedAt: null,
   });
@@ -483,6 +500,28 @@ function playBeep() {
 }
 
 renderAlerts();
+
+// ---------------------------------------------------------------------------
+// راهنمای نصب (Modal)
+// ---------------------------------------------------------------------------
+
+const installGuideBtn = document.getElementById("installGuideBtn");
+const installModal = document.getElementById("installModal");
+const installModalClose = document.getElementById("installModalClose");
+
+installGuideBtn.addEventListener("click", () => {
+  installModal.classList.add("show");
+});
+
+installModalClose.addEventListener("click", () => {
+  installModal.classList.remove("show");
+});
+
+installModal.addEventListener("click", (e) => {
+  if (e.target === installModal) {
+    installModal.classList.remove("show");
+  }
+});
 
 // ---------------------------------------------------------------------------
 // Web Push

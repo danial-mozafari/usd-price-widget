@@ -1,7 +1,7 @@
 {
   "name": "قیمت دلار لحظه‌ای",
   "short_name": "قیمت دلار",
-  "start_url": "/",
+  "start_url": ".",
   "display": "standalone",
   "background_color": "#0f172a",
   "theme_color": "#0f172a",

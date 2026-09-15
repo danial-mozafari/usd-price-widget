@@ -2,11 +2,11 @@
 <html lang="fa" dir="rtl">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
   <title>قیمت دلار | لحظه‌ای</title>
 
   <link rel="manifest" href="manifest.json" />
-  <meta name="theme-color" content="#0f0c29" />
+  <meta name="theme-color" content="#000000" />
   <link rel="apple-touch-icon" href="icon-192.png" />
 
   <link rel="stylesheet" href="style.css" />
@@ -68,15 +68,21 @@
     <div class="glass alerts-card">
       <div class="section-title">هشدار قیمت 🔔</div>
 
-      <div class="alert-form">
-        <select id="alertDirection">
-          <option value="gte">رسید به یا بالاتر از</option>
-          <option value="lte">رسید به یا پایین‌تر از</option>
-        </select>
+      <div class="segmented" id="alertDirectionGroup">
+        <button type="button" class="segmented-btn active" data-value="gte">
+          بالاتر از
+        </button>
+        <button type="button" class="segmented-btn" data-value="lte">
+          پایین‌تر از
+        </button>
+      </div>
 
+      <div class="alert-form">
         <input
           id="alertValue"
-          type="number"
+          type="text"
+          inputmode="numeric"
+          pattern="[0-9]*"
           placeholder="مثلاً 70000"
         />
 
@@ -88,12 +94,31 @@
       </div>
     </div>
 
-    <div class="footer-note">
-      داده‌ی شبیه‌سازی‌شده / واقعی بسته به تنظیمات سرور
-    </div>
+    <button id="installGuideBtn" class="install-guide-btn">
+      📲 راهنمای نصب روی گوشی
+    </button>
   </div>
 
   <div id="toast" class="toast"></div>
+
+  <div id="installModal" class="modal-overlay">
+    <div class="modal-sheet">
+      <div class="modal-handle"></div>
+      <h2>نصب روی گوشی</h2>
+
+      <div class="modal-section">
+        <h3>📱 اندروید (Chrome)</h3>
+        <p>از منوی سه‌نقطه‌ی بالای مرورگر، گزینه‌ی «Add to Home Screen» یا «نصب اپلیکیشن» رو بزن.</p>
+      </div>
+
+      <div class="modal-section">
+        <h3>🍎 آیفون (Safari)</h3>
+        <p>از آیکون Share (مربع با فلش) پایین صفحه، گزینه‌ی «Add to Home Screen» رو بزن.</p>
+      </div>
+
+      <button id="installModalClose" class="modal-close-btn">متوجه شدم</button>
+    </div>
+  </div>
 
   <script>
     if ("serviceWorker" in navigator) {

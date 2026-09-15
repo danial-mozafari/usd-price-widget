@@ -403,6 +403,10 @@ alertAddBtn.addEventListener("click", () => {
 });
 
 function checkAlerts(currentPrice) {
+  // نوتیف واقعی الان کاملاً از سمت سرور (Push) میاد و قابل‌اعتماده؛
+  // برای همین دیگه هیچ نوتیف/توست محلی اینجا نشون نمی‌دیم - وگرنه هر بار
+  // که اپ رو باز می‌کنی، یه پیام تکراری (علاوه بر همون Push واقعی) می‌بینی.
+  // فقط وضعیت «فایر شده» رو برای نمایش ✅ کنار هشدار به‌روز نگه می‌داریم.
   const alerts = loadAlerts();
   let changed = false;
 
@@ -417,33 +421,6 @@ function checkAlerts(currentPrice) {
     if (hit) {
       a.firedAt = new Date().toISOString();
       changed = true;
-
-      const arrow =
-        a.direction === "gte"
-          ? "به یا بالاتر از"
-          : "به یا پایین‌تر از";
-
-      showToast(
-        `💵 دلار رسید ${arrow} ${numberFmt.format(a.value)} تومان`
-      );
-
-      playBeep();
-
-      if (navigator.vibrate) {
-        navigator.vibrate([120, 60, 120]);
-      }
-
-      if (
-        "Notification" in window &&
-        Notification.permission === "granted"
-      ) {
-        try {
-          new Notification("قیمت دلار", {
-            body: `دلار به ${numberFmt.format(currentPrice)} تومان رسید`,
-            icon: "icon-192.png",
-          });
-        } catch (e) {}
-      }
     }
   });
 

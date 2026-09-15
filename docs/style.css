@@ -483,3 +483,37 @@ canvas#priceChart {
   transition: top 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 .toast.show { top: max(20px, env(safe-area-inset-top)); }
+
+/* ---------- چیدمان مخصوص دسکتاپ/مک (صفحه‌های عریض) ---------- */
+@media (min-width: 860px) {
+  body {
+    align-items: center;
+    padding: 40px 24px;
+  }
+
+  .app {
+    max-width: 920px;
+    display: grid;
+    grid-template-columns: 1.1fr 0.9fr;
+    grid-template-areas:
+      "topbar   topbar"
+      "price    chart"
+      "stats    alerts"
+      "install  install";
+    gap: 18px;
+  }
+
+  .topbar   { grid-area: topbar; }
+  .price-card { grid-area: price; display: flex; flex-direction: column; justify-content: center; }
+  .chart-card { grid-area: chart; }
+  .stats-grid { grid-area: stats; grid-template-columns: repeat(4, 1fr); }
+  .alerts-card { grid-area: alerts; }
+  .install-guide-btn { grid-area: install; max-width: 320px; margin: 0 auto; }
+
+  .price { font-size: 56px; }
+  canvas#priceChart { height: 220px !important; }
+}
+
+@media (min-width: 1200px) {
+  .app { max-width: 1100px; }
+}

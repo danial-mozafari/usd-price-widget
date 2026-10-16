@@ -1,6 +1,7 @@
 ```python
 import os
 import json
+import base64
 from datetime import datetime, timezone
 
 import requests
@@ -15,7 +16,7 @@ except Exception:
     TEHRAN_TZ = timezone.utc
 
 
-# Vercel Flask entry point — must be top-level
+# Vercel Flask entry point
 app = Flask(__name__)
 
 
@@ -60,6 +61,34 @@ def add_cors_headers(response):
 
 
 # =========================
+# Home / Health check
+# =========================
+
+@app.route("/", methods=["GET"])
+def home():
+    return jsonify({
+        "ok": True,
+        "service": "usd-widget-backend",
+        "endpoints": [
+            "/api/price",
+            "/api/tick",
+            "/api/vapid-public-key",
+            "/api/subscribe",
+            "/api/unsubscribe",
+        ],
+    })
+
+
+@app.route("/api/health", methods=["GET"])
+def api_health():
+    return jsonify({
+        "ok": True,
+        "supabase_url_set": bool(SUPABASE_URL),
+        "supabase_key_set": bool(SUPABASE_SECRET_KEY),
+    })
+
+
+# =========================
 # Supabase helpers
 # =========================
 
@@ -92,8 +121,9 @@ def kv_get(key, default):
             return default
 
         rows = response.json()
+
         if rows:
-            return rows[0]["value"]
+            return rows[0].get("value", default)
 
     except Exception as exc:
         print(f"[kv_get:{key}] error: {exc}")
@@ -110,7 +140,7 @@ def kv_set(key, value):
             f"{SUPABASE_URL}/rest/v1/kv_store",
             headers={
                 **_supabase_headers(),
-                "Prefer": "resolution=merge-duplicates",
+                "Prefer": "resolution=merge-duplicates,return=minimal",
             },
             params={"on_conflict": "key"},
             json={"key": key, "value": value},
@@ -183,8 +213,6 @@ def ensure_vapid_key_file():
 
 
 def get_vapid_public_key_b64():
-    import base64
-
     vapid = ensure_vapid_key_file()
     numbers = vapid.public_key.public_numbers()
 
@@ -207,17 +235,20 @@ def send_push(subscription_info, title, body):
             vapid_private_key=VAPID_PRIVATE_FILE,
             vapid_claims={"sub": VAPID_CLAIM_EMAIL},
         )
+
         return True
 
     except WebPushException as exc:
         response = getattr(exc, "response", None)
         status = getattr(response, "status_code", None)
         print(f"[send_push] status={status}: {exc}")
+
+        # Expired subscriptions should be removed.
         return status not in (404, 410)
 
     except Exception as exc:
         print(f"[send_push] error: {exc}")
-        return True
+        return False
 
 
 # =========================
@@ -238,6 +269,7 @@ def fetch_real_price() -> float:
         raise ValueError("ساختار پاسخ منبع قیمت نامعتبر است.")
 
     items = payload.get("data", [])
+
     if not isinstance(items, list):
         raise ValueError("فهرست قیمت‌ها معتبر نیست.")
 
@@ -302,6 +334,7 @@ def update_daily_tracking(daily, new_price):
 
 def check_and_fire_alerts(new_price):
     subscriptions = load_subscriptions()
+
     if not isinstance(subscriptions, list):
         return
 
@@ -321,27 +354,32 @@ def check_and_fire_alerts(new_price):
             except (KeyError, TypeError, ValueError):
                 continue
 
+            if direction not in ("gte", "lte"):
+                continue
+
             hit = (
                 new_price >= target
                 if direction == "gte"
                 else new_price <= target
             )
 
-            if hit:
-                success = send_push(
-                    sub["subscription"],
-                    "قیمت دلار",
-                    f"دلار به {int(new_price):,} تومان رسید",
-                )
+            if not hit:
+                continue
 
-                if not success:
-                    alive = False
-                    break
+            success = send_push(
+                sub["subscription"],
+                "قیمت دلار",
+                f"دلار به {int(new_price):,} تومان رسید",
+            )
 
-                alert["firedAt"] = datetime.now(
-                    timezone.utc
-                ).isoformat()
-                changed = True
+            if not success:
+                alive = False
+                break
+
+            alert["firedAt"] = datetime.now(
+                timezone.utc
+            ).isoformat()
+            changed = True
 
         if alive:
             remaining.append(sub)
@@ -362,12 +400,27 @@ def api_price():
     history = load_history()
     daily = load_daily_data()
 
-    payload = dict(state)
-    payload["history"] = history
-    payload["today_open"] = daily.get("today_open")
-    payload["yesterday_close"] = daily.get("yesterday_close")
-    payload["today_high"] = daily.get("today_high")
-    payload["today_low"] = daily.get("today_low")
+    if not isinstance(state, dict):
+        state = {}
+
+    if not isinstance(history, list):
+        history = []
+
+    if not isinstance(daily, dict):
+        daily = {}
+
+    payload = {
+        "price": state.get("price", 0),
+        "currency": state.get("currency", "USD/IRT"),
+        "change_percent": state.get("change_percent", 0.0),
+        "updated_at": state.get("updated_at"),
+        "source": state.get("source", "iran_market"),
+        "history": history,
+        "today_open": daily.get("today_open"),
+        "yesterday_close": daily.get("yesterday_close"),
+        "today_high": daily.get("today_high"),
+        "today_low": daily.get("today_low"),
+    }
 
     response = jsonify(payload)
     response.headers["Cache-Control"] = (
@@ -384,22 +437,26 @@ def api_price():
 def api_tick():
     state = load_state()
 
+    if not isinstance(state, dict):
+        state = {}
+
     try:
         old_price = float(state.get("price") or 0)
     except (TypeError, ValueError):
         old_price = 0.0
 
-    # Always fetch a real price; no BRSAPI_KEY or USE_REAL_API required.
     try:
         new_price = fetch_real_price()
     except Exception as exc:
         print(f"[api_tick] price fetch failed: {exc}")
         return jsonify({
             "ok": False,
-            "error": str(exc),
+            "error": "دریافت قیمت از منبع ناموفق بود.",
+            "details": str(exc),
         }), 502
 
     change_percent = 0.0
+
     if old_price > 0:
         change_percent = round(
             ((new_price - old_price) / old_price) * 100,
@@ -408,7 +465,11 @@ def api_tick():
 
     now_iso = datetime.now(timezone.utc).isoformat()
 
-    daily = update_daily_tracking(load_daily_data(), new_price)
+    daily = load_daily_data()
+    if not isinstance(daily, dict):
+        daily = {}
+
+    daily = update_daily_tracking(daily, new_price)
     daily_result = kv_set("daily_data", daily)
 
     history = load_history()
@@ -426,9 +487,9 @@ def api_tick():
         "updated_at": now_iso,
         "source": "iran_market",
     }
+
     state_result = kv_set("current_state", new_state)
 
-    # Only run alert checks if the state was saved successfully.
     if state_result.get("ok"):
         try:
             check_and_fire_alerts(new_price)
@@ -453,7 +514,14 @@ def api_tick():
 
 @app.route("/api/vapid-public-key", methods=["GET"])
 def api_vapid_public_key():
-    return jsonify({"key": get_vapid_public_key_b64()})
+    try:
+        return jsonify({"key": get_vapid_public_key_b64()})
+    except Exception as exc:
+        print(f"[api_vapid_public_key] error: {exc}")
+        return jsonify({
+            "ok": False,
+            "error": "خطا در ساخت کلید عمومی VAPID",
+        }), 500
 
 
 # =========================
@@ -465,14 +533,23 @@ def api_subscribe():
     if request.method == "OPTIONS":
         return "", 204
 
-    body = request.get_json(force=True, silent=True) or {}
+    body = request.get_json(silent=True) or {}
     subscription_info = body.get("subscription")
     alerts = body.get("alerts", [])
 
-    if not subscription_info or "endpoint" not in subscription_info:
+    if (
+        not isinstance(subscription_info, dict)
+        or not subscription_info.get("endpoint")
+    ):
         return jsonify({
             "ok": False,
             "error": "invalid subscription",
+        }), 400
+
+    if not isinstance(alerts, list):
+        return jsonify({
+            "ok": False,
+            "error": "alerts must be a list",
         }), 400
 
     subscriptions = load_subscriptions()
@@ -482,13 +559,22 @@ def api_subscribe():
     existing_fired = {}
 
     for sub in subscriptions:
+        if not isinstance(sub, dict):
+            continue
+
         for alert in sub.get("alerts", []):
+            if not isinstance(alert, dict):
+                continue
+
             if alert.get("firedAt"):
                 existing_fired[alert.get("id")] = alert["firedAt"]
 
     merged_alerts = []
 
     for alert in alerts:
+        if not isinstance(alert, dict):
+            continue
+
         alert = dict(alert)
         alert_id = alert.get("id")
 
@@ -497,10 +583,14 @@ def api_subscribe():
 
         merged_alerts.append(alert)
 
+    endpoint = subscription_info["endpoint"]
+
     subscriptions = [
         sub for sub in subscriptions
-        if sub.get("subscription", {}).get("endpoint")
-        != subscription_info["endpoint"]
+        if not (
+            isinstance(sub, dict)
+            and sub.get("subscription", {}).get("endpoint") == endpoint
+        )
     ]
 
     subscriptions.append({
@@ -508,7 +598,13 @@ def api_subscribe():
         "alerts": merged_alerts,
     })
 
-    save_subscriptions(subscriptions)
+    save_result = save_subscriptions(subscriptions)
+
+    if not save_result.get("ok"):
+        return jsonify({
+            "ok": False,
+            "error": "ذخیره‌سازی اشتراک ناموفق بود.",
+        }), 500
 
     return jsonify({
         "ok": True,
@@ -525,8 +621,14 @@ def api_unsubscribe():
     if request.method == "OPTIONS":
         return "", 204
 
-    body = request.get_json(force=True, silent=True) or {}
+    body = request.get_json(silent=True) or {}
     endpoint = body.get("endpoint")
+
+    if not endpoint:
+        return jsonify({
+            "ok": False,
+            "error": "endpoint is required",
+        }), 400
 
     subscriptions = load_subscriptions()
     if not isinstance(subscriptions, list):
@@ -534,10 +636,19 @@ def api_unsubscribe():
 
     subscriptions = [
         sub for sub in subscriptions
-        if sub.get("subscription", {}).get("endpoint") != endpoint
+        if not (
+            isinstance(sub, dict)
+            and sub.get("subscription", {}).get("endpoint") == endpoint
+        )
     ]
 
-    save_subscriptions(subscriptions)
+    save_result = save_subscriptions(subscriptions)
+
+    if not save_result.get("ok"):
+        return jsonify({
+            "ok": False,
+            "error": "ذخیره‌سازی ناموفق بود.",
+        }), 500
 
     return jsonify({"ok": True})
 ```

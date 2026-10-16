@@ -1,11 +1,21 @@
 """
-USD Price Dashboard - Flask backend
+USD Price Backend - نسخه‌ی Vercel (Serverless)
+=================================================
+برخلاف نسخه‌ی Render، این نسخه یه برنامه‌ی همیشه-روشن نیست - هر بار که
+یه درخواست میاد (یا cron-job.org به /api/tick سر می‌زنه)، یه‌بار اجرا
+میشه و تموم. برای همین، همه‌چیز (قیمت فعلی، تاریخچه، آمار روزانه،
+اشتراک‌های Push) باید روی Supabase ذخیره بشه - هیچ متغیر حافظه‌ای بین
+دو تا درخواست دووم نمیاره.
+
+جریان کار:
+- cron-job.org هر چند دقیقه یه‌بار /api/tick رو صدا می‌زنه → قیمت جدید
+  گرفته میشه، توی Supabase ذخیره میشه، هشدارها چک میشن.
+- مرورگر/اپ هر چند ثانیه /api/price رو صدا می‌زنه → فقط آخرین مقداری
+  که توی Supabase ذخیره شده رو می‌خونه و برمی‌گردونه (سریع و بدون فچ).
 """
 
 import os
 import json
-import time
-import random
 import threading
 from collections import deque
 from datetime import datetime, timezone
@@ -15,13 +25,11 @@ from flask import Flask, jsonify, request
 from pywebpush import webpush, WebPushException
 from py_vapid import Vapid01 as Vapid
 
-
 try:
     from zoneinfo import ZoneInfo
     TEHRAN_TZ = ZoneInfo("Asia/Tehran")
 except Exception:
     TEHRAN_TZ = timezone.utc
-
 
 app = Flask(__name__)
 
@@ -29,7 +37,6 @@ app = Flask(__name__)
 # =========================
 # CORS
 # =========================
-
 @app.after_request
 def add_cors_headers(response):
     response.headers["Access-Control-Allow-Origin"] = "*"
@@ -39,121 +46,38 @@ def add_cors_headers(response):
 
 
 # =========================
-# Paths
-# =========================
-
-BASE_DIR = os.path.dirname(
-    os.path.abspath(__file__)
-)
-
-DAILY_FILE = os.path.join(
-    BASE_DIR,
-    "daily_data.json"
-)
-
-VAPID_PRIVATE_FILE = os.path.join(
-    BASE_DIR,
-    "vapid_private_key.pem"
-)
-
-SUBSCRIPTIONS_FILE = os.path.join(
-    BASE_DIR,
-    "subscriptions.json"
-)
-
-
-# =========================
 # Environment
 # =========================
-
 VAPID_CLAIM_EMAIL = os.environ.get(
     "VAPID_CLAIM_EMAIL",
     "mailto:push-notifications@usd-price-widget.app"
 )
 
-USE_REAL_API = (
-    os.environ.get(
-        "USE_REAL_API",
-        "0"
-    ).strip()
-    == "1"
-)
+USE_REAL_API = os.environ.get("USE_REAL_API", "0").strip() == "1"
+BRSAPI_KEY = os.environ.get("BRSAPI_KEY", "").strip()
 
-BRSAPI_KEY = os.environ.get(
-    "BRSAPI_KEY",
-    ""
-).strip()
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "").strip().rstrip("/")
+SUPABASE_SECRET_KEY = os.environ.get("SUPABASE_SECRET_KEY", "").strip()
 
-SUPABASE_URL = os.environ.get(
-    "SUPABASE_URL",
-    ""
-).strip().rstrip("/")
-
-SUPABASE_SECRET_KEY = os.environ.get(
-    "SUPABASE_SECRET_KEY",
-    ""
-).strip()
-
-
-# =========================
-# API settings
-# =========================
+# روی سرورلس، دیسک دائمی نداریم - کلید VAPID باید همیشه از env var بیاد
+# (همون کلیدی که قبلاً روی Render هم استفاده می‌کردیم، تا اشتراک‌های
+# قبلی گوشی‌ها خراب نشن)
+VAPID_PRIVATE_KEY_PEM = os.environ.get("VAPID_PRIVATE_KEY_PEM", "").strip()
+VAPID_PRIVATE_FILE = "/tmp/vapid_private_key.pem"
 
 REQUEST_HEADERS = {
     "User-Agent": (
-        "Mozilla/5.0 "
-        "(Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 "
-        "(KHTML, like Gecko) "
-        "Chrome/124.0.0.0 "
-        "Safari/537.36"
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
     )
 }
 
-
-POLL_INTERVAL_SECONDS = (
-    60
-    if USE_REAL_API
-    else 3
-)
-
-HISTORY_MAXLEN = 500
+HISTORY_MAXLEN = 200
 
 
 # =========================
-# State
+# Supabase (تنها منبع حافظه)
 # =========================
-
-state_lock = threading.Lock()
-
-state = {
-    "price": 0,
-    "currency": "USD/IRT",
-    "change_percent": 0.0,
-    "updated_at": None,
-    "source": (
-        "real_api"
-        if USE_REAL_API
-        else "simulator"
-    ),
-    "today_open": None,
-    "yesterday_close": None,
-    "today_high": None,
-    "today_low": None,
-}
-
-
-price_history = deque(
-    maxlen=HISTORY_MAXLEN
-)
-
-
-# =========================
-# Supabase (ذخیره‌سازی دائمی)
-# =========================
-# چرا: فایل محلی روی Render هر بار که سرویس دوباره دیپلوی/ری‌استارت میشه
-# پاک میشه (دیسک موقتیه). برای همین آمار روز و وضعیت هشدارها رو توی یک
-# جدول ساده روی Supabase (رایگان، دائمی) نگه می‌داریم.
 
 def _supabase_headers():
     return {
@@ -178,6 +102,7 @@ def kv_get(key, default):
             print(f"[kv_get:{key}] status={resp.status_code} body={resp.text[:300]}")
             return default
         rows = resp.json()
+        print(f"[kv_get:{key}] موفق - {len(rows)} ردیف پیدا شد")
         if rows:
             return rows[0]["value"]
     except Exception as e:
@@ -188,7 +113,7 @@ def kv_get(key, default):
 def kv_set(key, value):
     if not SUPABASE_URL or not SUPABASE_SECRET_KEY:
         print(f"[kv_set:{key}] SUPABASE_URL یا SUPABASE_SECRET_KEY خالیه")
-        return
+        return {"ok": False, "reason": "missing_config"}
     try:
         resp = requests.post(
             f"{SUPABASE_URL}/rest/v1/kv_store",
@@ -199,15 +124,27 @@ def kv_set(key, value):
         )
         if resp.status_code >= 300:
             print(f"[kv_set:{key}] status={resp.status_code} body={resp.text[:300]}")
-        else:
-            print(f"[kv_set:{key}] موفق status={resp.status_code}")
+            return {"ok": False, "status": resp.status_code, "body": resp.text[:300]}
+        print(f"[kv_set:{key}] موفق status={resp.status_code}")
+        return {"ok": True, "status": resp.status_code}
     except Exception as e:
         print(f"[kv_set:{key}] exception: {e}")
+        return {"ok": False, "exception": str(e)}
 
 
-# =========================
-# Daily data
-# =========================
+def load_state():
+    return kv_get("current_state", {
+        "price": 0,
+        "currency": "USD/IRT",
+        "change_percent": 0.0,
+        "updated_at": None,
+        "source": "simulator",
+    })
+
+
+def load_history():
+    return kv_get("price_history", [])
+
 
 def load_daily_data():
     return kv_get("daily_data", {
@@ -220,122 +157,6 @@ def load_daily_data():
     })
 
 
-def save_daily_data(data):
-    kv_set("daily_data", data)
-
-
-daily = load_daily_data()
-
-
-# =========================
-# VAPID
-# =========================
-
-def ensure_vapid_keys():
-
-    env_key = os.environ.get(
-        "VAPID_PRIVATE_KEY_PEM",
-        ""
-    ).strip()
-
-    if env_key:
-
-        with open(
-            VAPID_PRIVATE_FILE,
-            "w"
-        ) as f:
-
-            f.write(
-                env_key.replace(
-                    "\\n",
-                    "\n"
-                )
-            )
-
-    elif not os.path.exists(
-        VAPID_PRIVATE_FILE
-    ):
-
-        from cryptography.hazmat.primitives.asymmetric import ec
-        from cryptography.hazmat.primitives import serialization
-
-        private_key = (
-            ec.generate_private_key(
-                ec.SECP256R1()
-            )
-        )
-
-        pem = private_key.private_bytes(
-            encoding=serialization.Encoding.PEM,
-            format=serialization.PrivateFormat.PKCS8,
-            encryption_algorithm=serialization.NoEncryption(),
-        )
-
-        with open(
-            VAPID_PRIVATE_FILE,
-            "wb"
-        ) as f:
-
-            f.write(
-                pem
-            )
-
-        print(
-            "[vapid] کلید جدید ساخته شد - این خط رو کامل کپی کن و به‌عنوان "
-            "VAPID_PRIVATE_KEY_PEM ست کن:"
-        )
-        print(pem.decode().replace("\n", "\\n"))
-
-    return Vapid.from_file(
-        VAPID_PRIVATE_FILE
-    )
-
-
-vapid_instance = ensure_vapid_keys()
-
-
-def get_vapid_public_key_b64():
-
-    import base64
-
-    numbers = (
-        vapid_instance
-        .public_key
-        .public_numbers()
-    )
-
-    x = numbers.x.to_bytes(
-        32,
-        "big"
-    )
-
-    y = numbers.y.to_bytes(
-        32,
-        "big"
-    )
-
-    raw = (
-        b"\x04"
-        + x
-        + y
-    )
-
-    return (
-        base64.urlsafe_b64encode(
-            raw
-        )
-        .rstrip(b"=")
-        .decode("utf-8")
-    )
-
-
-# =========================
-# Subscriptions
-# =========================
-
-subscriptions_lock = threading.Lock()
-
-
 def load_subscriptions():
     return kv_get("subscriptions", [])
 
@@ -344,812 +165,267 @@ def save_subscriptions(subs):
     kv_set("subscriptions", subs)
 
 
-subscriptions = load_subscriptions()
-
-
 # =========================
-# Push notification
+# VAPID
 # =========================
 
-def send_push(
-    subscription_info,
-    title,
-    body
-):
+def ensure_vapid_key_file() -> Vapid:
+    if not VAPID_PRIVATE_KEY_PEM:
+        raise RuntimeError(
+            "VAPID_PRIVATE_KEY_PEM تنظیم نشده. روی Vercel این env var رو "
+            "دقیقاً با همون مقداری که روی Render داشتی ست کن."
+        )
+    with open(VAPID_PRIVATE_FILE, "w") as f:
+        f.write(VAPID_PRIVATE_KEY_PEM.replace("\\n", "\n"))
+    return Vapid.from_file(VAPID_PRIVATE_FILE)
 
+
+def get_vapid_public_key_b64() -> str:
+    import base64
+    vapid_instance = ensure_vapid_key_file()
+    numbers = vapid_instance.public_key.public_numbers()
+    x = numbers.x.to_bytes(32, "big")
+    y = numbers.y.to_bytes(32, "big")
+    raw = b"\x04" + x + y
+    return base64.urlsafe_b64encode(raw).rstrip(b"=").decode("utf-8")
+
+
+def send_push(subscription_info, title, body):
     try:
-
+        ensure_vapid_key_file()
         webpush(
             subscription_info=subscription_info,
-            data=json.dumps({
-                "title": title,
-                "body": body
-            }),
+            data=json.dumps({"title": title, "body": body}),
             vapid_private_key=VAPID_PRIVATE_FILE,
-            vapid_claims={
-                "sub": VAPID_CLAIM_EMAIL
-            },
+            vapid_claims={"sub": VAPID_CLAIM_EMAIL},
         )
-
-        print(
-            f"[send_push] موفق - به "
-            f"{subscription_info.get('endpoint', '?')[:60]}... فرستاده شد"
-        )
-
+        print(f"[send_push] موفق - به {subscription_info.get('endpoint', '?')[:60]}... فرستاده شد")
         return True
-
     except WebPushException as e:
-
-        response = getattr(
-            e,
-            "response",
-            None
-        )
-
-        status = getattr(
-            response,
-            "status_code",
-            None
-        )
-
-        body = getattr(
-            response,
-            "text",
-            None
-        )
-
-        print(
-            f"[send_push] error "
-            f"status={status} body={body}: {e}"
-        )
-
-        return status not in (
-            404,
-            410
-        )
-
+        response = getattr(e, "response", None)
+        status = getattr(response, "status_code", None)
+        body_text = getattr(response, "text", None)
+        print(f"[send_push] error status={status} body={body_text}: {e}")
+        return status not in (404, 410)
     except Exception as e:
-
-        print(
-            f"[send_push] unexpected error: {e}"
-        )
-
+        print(f"[send_push] خطای غیرمنتظره: {e}")
         return True
 
 
-def check_and_fire_alerts(
-    new_price
-):
-
-    with subscriptions_lock:
-
-        changed = False
-        still_valid = []
-
-        for sub in subscriptions:
-
-            alive = True
-
-            for alert in sub.get(
-                "alerts",
-                []
-            ):
-
-                if alert.get(
-                    "firedAt"
-                ):
-                    continue
-
-                if alert["direction"] == "gte":
-
-                    hit = (
-                        new_price
-                        >= alert["value"]
-                    )
-
-                else:
-
-                    hit = (
-                        new_price
-                        <= alert["value"]
-                    )
-
-                if hit:
-
-                    ok = send_push(
-                        sub["subscription"],
-                        "قیمت دلار",
-                        (
-                            "دلار به "
-                            f"{int(new_price):,} "
-                            "تومان رسید"
-                        ),
-                    )
-
-                    if not ok:
-
-                        alive = False
-                        break
-
-                    alert["firedAt"] = (
-                        datetime.now(
-                            timezone.utc
-                        ).isoformat()
-                    )
-
-                    changed = True
-
-            if alive:
-                still_valid.append(
-                    sub
-                )
-            else:
-                changed = True
-
-        if changed:
-
-            subscriptions[:] = (
-                still_valid
-            )
-
-            save_subscriptions(
-                subscriptions
-            )
-
-
 # =========================
-# Daily tracking
+# منطق قیمت
 # =========================
 
-def update_daily_tracking(
-    new_price
-):
 
-    today = datetime.now(
-        TEHRAN_TZ
-    ).strftime(
-        "%Y-%m-%d"
-    )
+def fetch_real_price() -> float:
+    url = "https://raw.githubusercontent.com/iran-market/iran-market.github.io/main/data/popular.json"
 
-    if daily["date"] is None:
+    resp = requests.get(url, headers=REQUEST_HEADERS, timeout=20)
+    resp.raise_for_status()
+    data = resp.json()
 
-        daily["date"] = today
-
-        daily["today_open"] = (
-            new_price
-        )
-
-        daily["today_high"] = (
-            new_price
-        )
-
-        daily["today_low"] = (
-            new_price
-        )
-
-    elif daily["date"] != today:
-
-        daily["yesterday_close"] = (
-            daily["last_price"]
-        )
-
-        daily["date"] = today
-
-        daily["today_open"] = (
-            new_price
-        )
-
-        daily["today_high"] = (
-            new_price
-        )
-
-        daily["today_low"] = (
-            new_price
-        )
-
-    else:
-
-        daily["today_high"] = max(
-            daily["today_high"]
-            or new_price,
-            new_price
-        )
-
-        daily["today_low"] = min(
-            daily["today_low"]
-            or new_price,
-            new_price
-        )
-
-    daily["last_price"] = (
-        new_price
-    )
-
-    save_daily_data(
-        daily
-    )
-
-
-# =========================
-# Simulator
-# =========================
-
-def fetch_simulated_price(
-    previous_price
-):
-
-    if previous_price == 0:
-
-        previous_price = 68500
-
-    drift = random.uniform(
-        -40,
-        40
-    )
-
-    return round(
-        previous_price + drift,
-        0
-    )
-
-
-# =========================
-# Real API
-# =========================
-
-def fetch_real_price():
-
-    if not BRSAPI_KEY:
-
-        raise RuntimeError(
-            "BRSAPI_KEY تنظیم نشده."
-        )
-
-    url = (
-        "https://Api.BrsApi.ir/"
-        "Market/Gold_Currency.php"
-        f"?key={BRSAPI_KEY}"
-    )
-
-    response = requests.get(
-        url,
-        headers=REQUEST_HEADERS,
-        timeout=10
-    )
-
-    response.raise_for_status()
-
-    data = response.json()
-
-    if isinstance(
-        data,
-        list
-    ):
-
-        items = data
-
-    elif isinstance(
-        data,
-        dict
-    ):
-
-        items = (
-            data.get(
-                "currency"
-            )
-            or data.get(
-                "gold_currency"
-            )
-            or []
-        )
-
-    else:
-
-        items = []
+    items = data.get("data", [])
 
     for item in items:
+        if item.get("symbol") == "USD_IRR_FREE":
+            if item.get("stale") is True:
+                raise ValueError("داده قیمت دلار قدیمی است.")
 
-        symbol = str(
-            item.get(
-                "symbol",
-                ""
-            )
-        ).upper()
-
-        name_en = str(
-            item.get(
-                "name_en",
-                ""
-            )
-        ).lower()
-
-        if (
-            symbol == "USD"
-            or "dollar" in name_en
-        ):
-
-            price_str = str(
-                item.get(
-                    "price",
-                    ""
-                )
-            )
-
-            price_str = (
-                price_str
-                .replace(",", "")
-                .strip()
-            )
-
-            if not price_str:
-                break
-
-            price = float(
-                price_str
-            )
+            price = float(item.get("price") or 0)
 
             if price <= 0:
-                break
+                raise ValueError("قیمت دلار نامعتبر است.")
 
             return price
 
-    raise ValueError(
-        "آیتم دلار USD "
-        "توی پاسخ API پیدا نشد."
-    )
+    raise ValueError("نماد دلار در پاسخ پیدا نشد.")
 
 
-# =========================
-# Update state
-# =========================
 
-def update_price_state(
-    new_price
-):
 
-    with state_lock:
+def update_daily_tracking(daily, new_price):
+    today = datetime.now(TEHRAN_TZ).strftime("%Y-%m-%d")
 
-        old_price = (
-            state["price"]
-        )
+    if daily["date"] is None:
+        daily["date"] = today
+        daily["today_open"] = new_price
+        daily["today_high"] = new_price
+        daily["today_low"] = new_price
+    elif daily["date"] != today:
+        daily["yesterday_close"] = daily["last_price"]
+        daily["date"] = today
+        daily["today_open"] = new_price
+        daily["today_high"] = new_price
+        daily["today_low"] = new_price
+    else:
+        daily["today_high"] = max(daily["today_high"] or new_price, new_price)
+        daily["today_low"] = min(daily["today_low"] or new_price, new_price)
 
-        change_percent = 0.0
+    daily["last_price"] = new_price
+    return daily
 
-        if old_price:
 
-            change_percent = round(
-                (
-                    (
-                        new_price
-                        - old_price
-                    )
-                    / old_price
-                    * 100
-                ),
-                3
+def check_and_fire_alerts(new_price):
+    subscriptions = load_subscriptions()
+    changed = False
+    still_valid = []
+
+    for sub in subscriptions:
+        alive = True
+        for alert in sub.get("alerts", []):
+            if alert.get("firedAt"):
+                continue
+            hit = (
+                new_price >= alert["value"] if alert["direction"] == "gte"
+                else new_price <= alert["value"]
             )
-
-        now_iso = (
-            datetime.now(
-                timezone.utc
-            ).isoformat()
-        )
-
-        state["price"] = (
-            new_price
-        )
-
-        state["change_percent"] = (
-            change_percent
-        )
-
-        state["updated_at"] = (
-            now_iso
-        )
-
-        state["source"] = (
-            "real_api"
-            if USE_REAL_API
-            else "simulator"
-        )
-
-        state["today_open"] = (
-            daily.get(
-                "today_open"
-            )
-        )
-
-        state["yesterday_close"] = (
-            daily.get(
-                "yesterday_close"
-            )
-        )
-
-        state["today_high"] = (
-            daily.get(
-                "today_high"
-            )
-        )
-
-        state["today_low"] = (
-            daily.get(
-                "today_low"
-            )
-        )
-
-        price_history.append({
-            "t": now_iso,
-            "p": new_price
-        })
-
-    return new_price
-
-
-# =========================
-# Price updater
-# =========================
-
-def price_updater_loop():
-
-    while True:
-
-        try:
-
-            with state_lock:
-
-                old_price = (
-                    state["price"]
+            if hit:
+                ok = send_push(
+                    sub["subscription"],
+                    "قیمت دلار",
+                    f"دلار به {int(new_price):,} تومان رسید",
                 )
+                if not ok:
+                    alive = False
+                    break
+                alert["firedAt"] = datetime.now(timezone.utc).isoformat()
+                changed = True
+        if alive:
+            still_valid.append(sub)
+        else:
+            changed = True
 
-            if USE_REAL_API:
-
-                new_price = (
-                    fetch_real_price()
-                )
-
-            else:
-
-                new_price = (
-                    fetch_simulated_price(
-                        old_price
-                    )
-                )
-
-            print(
-                "[price_updater_loop] "
-                f"قیمت گرفته شد: {new_price}"
-            )
-
-            update_daily_tracking(
-                new_price
-            )
-
-            update_price_state(
-                new_price
-            )
-
-            check_and_fire_alerts(
-                new_price
-            )
-
-        except Exception as e:
-
-            print(
-                "[price_updater_loop] "
-                f"error: {e}"
-            )
-
-        time.sleep(
-            POLL_INTERVAL_SECONDS
-        )
+    if changed:
+        save_subscriptions(still_valid)
 
 
 # =========================
-# API: Price
+# روت‌ها
 # =========================
 
-@app.route(
-    "/api/price",
-    methods=["GET"]
-)
+@app.route("/api/price")
 def api_price():
+    state = load_state()
+    history = load_history()
+    daily = load_daily_data()
 
-    with state_lock:
+    payload = dict(state)
+    payload["history"] = history
+    payload["today_open"] = daily.get("today_open")
+    payload["yesterday_close"] = daily.get("yesterday_close")
+    payload["today_high"] = daily.get("today_high")
+    payload["today_low"] = daily.get("today_low")
 
-        payload = dict(
-            state
-        )
-
-        payload["history"] = (
-            list(
-                price_history
-            )
-        )
-
-    # اگر قیمت واقعی هنوز وارد state نشده،
-    # مستقیماً یک بار از API دریافت کن.
-    if (
-        USE_REAL_API
-        and payload["price"] == 0
-    ):
-
-        try:
-
-            new_price = (
-                fetch_real_price()
-            )
-
-            update_daily_tracking(
-                new_price
-            )
-
-            update_price_state(
-                new_price
-            )
-
-            with state_lock:
-
-                payload = dict(
-                    state
-                )
-
-                payload["history"] = (
-                    list(
-                        price_history
-                    )
-                )
-
-            print(
-                "[api_price] "
-                f"قیمت مستقیم گرفته شد: "
-                f"{new_price}"
-            )
-
-        except Exception as e:
-
-            print(
-                "[api_price] "
-                f"direct fetch error: {e}"
-            )
-
-    return jsonify(
-        payload
-    )
+    response = jsonify(payload)
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    return response
 
 
-# =========================
-# API: VAPID
-# =========================
+@app.route("/api/tick")
+def api_tick():
+    """این روت رو cron-job.org هر چند دقیقه یه‌بار صدا می‌زنه."""
+    state = load_state()
+    old_price = state.get("price", 0)
 
-@app.route(
-    "/api/vapid-public-key",
-    methods=["GET"]
-)
-def api_vapid_public_key():
+    try:
+        new_price = fetch_real_price()
+    except Exception as e:
+        print(f"[api_tick] error: {e}")
+        return jsonify({"ok": False, "error": str(e)}), 500
 
-    return jsonify({
-        "key":
-            get_vapid_public_key_b64()
-    })
+    change_percent = 0.0
+    if old_price:
+        change_percent = round((new_price - old_price) / old_price * 100, 3)
 
+    now_iso = datetime.now(timezone.utc).isoformat()
 
-# =========================
-# API: Subscribe
-# =========================
+    daily = load_daily_data()
+    daily = update_daily_tracking(daily, new_price)
+    debug_daily_save = kv_set("daily_data", daily)
 
-@app.route(
-    "/api/subscribe",
-    methods=["POST", "OPTIONS"]
-)
-def api_subscribe():
+    history = load_history()
+    history.append({"t": now_iso, "p": new_price})
+    history = history[-HISTORY_MAXLEN:]
+    debug_history_save = kv_set("price_history", history)
 
-    if request.method == "OPTIONS":
+    new_state = {
+        "price": new_price,
+        "currency": "USD/IRT",
+        "change_percent": change_percent,
+        "updated_at": now_iso,
+        "source": "real_api" if USE_REAL_API else "simulator",
+    }
+    debug_state_save = kv_set("current_state", new_state)
 
-        return (
-            "",
-            204
-        )
-
-    body = (
-        request.get_json(
-            force=True,
-            silent=True
-        )
-        or {}
-    )
-
-    subscription_info = (
-        body.get(
-            "subscription"
-        )
-    )
-
-    alerts = body.get(
-        "alerts",
-        []
-    )
-
-    if (
-        not subscription_info
-        or "endpoint"
-        not in subscription_info
-    ):
-
-        return jsonify({
-            "ok": False,
-            "error":
-                "invalid subscription"
-        }), 400
-
-    with subscriptions_lock:
-
-        # اگه سرور قبلاً یه هشدار رو فایر کرده (حتی زیر یه endpoint قدیمی -
-        # چون هر بار اپ باز/بسته میشه endpoint عوض میشه)، نباید وضعیتش
-        # دوباره صفر بشه - وگرنه دوباره Push تکراری می‌فرستیم. اینجا توی
-        # تمام endpoint های ذخیره‌شده (نه فقط همین یکی) دنبال شناسه‌ی
-        # هشدار می‌گردیم، چون خود شناسه (id) همیشه ثابت می‌مونه.
-        existing_fired = {}
-
-        for s in subscriptions:
-            for a in s.get("alerts", []):
-                if a.get("firedAt"):
-                    existing_fired[a["id"]] = a["firedAt"]
-
-        merged_alerts = []
-        for a in alerts:
-            a = dict(a)
-            if a["id"] in existing_fired and not a.get("firedAt"):
-                a["firedAt"] = existing_fired[a["id"]]
-            merged_alerts.append(a)
-
-        alerts = merged_alerts
-
-        subscriptions[:] = [
-            s
-            for s in subscriptions
-            if (
-                s["subscription"]
-                ["endpoint"]
-                != subscription_info
-                ["endpoint"]
-            )
-        ]
-
-        subscriptions.append({
-            "subscription":
-                subscription_info,
-            "alerts":
-                alerts
-        })
-
-        save_subscriptions(
-            subscriptions
-        )
+    check_and_fire_alerts(new_price)
 
     return jsonify({
         "ok": True,
-        "alerts": alerts
+        "price": new_price,
+        "debug_daily_save": debug_daily_save,
+        "debug_history_save": debug_history_save,
+        "debug_state_save": debug_state_save,
+        "supabase_url_set": bool(SUPABASE_URL),
+        "supabase_key_set": bool(SUPABASE_SECRET_KEY),
     })
 
 
-# =========================
-# API: Unsubscribe
-# =========================
+@app.route("/api/vapid-public-key")
+def api_vapid_public_key():
+    return jsonify({"key": get_vapid_public_key_b64()})
 
-@app.route(
-    "/api/unsubscribe",
-    methods=["POST", "OPTIONS"]
-)
-def api_unsubscribe():
 
+@app.route("/api/subscribe", methods=["POST", "OPTIONS"])
+def api_subscribe():
     if request.method == "OPTIONS":
+        return "", 204
 
-        return (
-            "",
-            204
-        )
+    body = request.get_json(force=True, silent=True) or {}
+    subscription_info = body.get("subscription")
+    alerts = body.get("alerts", [])
 
-    body = (
-        request.get_json(
-            force=True,
-            silent=True
-        )
-        or {}
-    )
+    if not subscription_info or "endpoint" not in subscription_info:
+        return jsonify({"ok": False, "error": "invalid subscription"}), 400
 
-    endpoint = body.get(
-        "endpoint"
-    )
+    subscriptions = load_subscriptions()
 
-    with subscriptions_lock:
+    existing_fired = {}
+    for s in subscriptions:
+        for a in s.get("alerts", []):
+            if a.get("firedAt"):
+                existing_fired[a["id"]] = a["firedAt"]
 
-        subscriptions[:] = [
-            s
-            for s in subscriptions
-            if (
-                s["subscription"]
-                ["endpoint"]
-                != endpoint
-            )
-        ]
+    merged_alerts = []
+    for a in alerts:
+        a = dict(a)
+        if a["id"] in existing_fired and not a.get("firedAt"):
+            a["firedAt"] = existing_fired[a["id"]]
+        merged_alerts.append(a)
+    alerts = merged_alerts
 
-        save_subscriptions(
-            subscriptions
-        )
+    subscriptions = [
+        s for s in subscriptions
+        if s["subscription"]["endpoint"] != subscription_info["endpoint"]
+    ]
+    subscriptions.append({"subscription": subscription_info, "alerts": alerts})
+    save_subscriptions(subscriptions)
 
-    return jsonify({
-        "ok": True
-    })
+    return jsonify({"ok": True, "alerts": alerts})
 
 
-# =========================
-# Health check
-# =========================
+@app.route("/api/unsubscribe", methods=["POST", "OPTIONS"])
+def api_unsubscribe():
+    if request.method == "OPTIONS":
+        return "", 204
 
-@app.route(
-    "/health",
-    methods=["GET"]
-)
-def health():
+    body = request.get_json(force=True, silent=True) or {}
+    endpoint = body.get("endpoint")
 
-    with state_lock:
+    subscriptions = load_subscriptions()
+    subscriptions = [
+        s for s in subscriptions
+        if s["subscription"]["endpoint"] != endpoint
+    ]
+    save_subscriptions(subscriptions)
 
-        return jsonify({
-            "ok": True,
-            "price":
-                state["price"],
-            "source":
-                state["source"],
-            "updated_at":
-                state["updated_at"],
-            "use_real_api":
-                USE_REAL_API
-        })
-
-
-# =========================
-# Debug: چک کردن مستقیم حافظه‌ی سرور (موقتی، برای عیب‌یابی)
-# =========================
-
-@app.route("/api/debug/state")
-def api_debug_state():
-    with subscriptions_lock, state_lock:
-        return jsonify({
-            "current_price": state.get("price"),
-            "use_real_api": USE_REAL_API,
-            "subscriptions_count": len(subscriptions),
-            "subscriptions": subscriptions,
-        })
-
-
-# =========================
-# Start updater
-# =========================
-
-_updater_thread = threading.Thread(
-    target=price_updater_loop,
-    daemon=True
-)
-
-_updater_thread.start()
-
-
-# =========================
-# Local run
-# =========================
-
-if __name__ == "__main__":
-
-    port = int(
-        os.environ.get(
-            "PORT",
-            5000
-        )
-    )
-
-    app.run(
-        host="0.0.0.0",
-        port=port,
-        debug=True,
-        use_reloader=False
-    )
+    return jsonify({"ok": True})
